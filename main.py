@@ -10,14 +10,17 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont
 import uuid
 from sajupy import calculate_saju
-from openai import OpenAI
+import google.generativeai as genai  # 💡 구글 Gemini 라이브러리 추가
 
 app = FastAPI()
 
 os.makedirs("/tmp/static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
-client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# 💡 구글 Gemini API 설정
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# 무료로 사용하기 좋은 Gemini 1.5 Flash 모델 사용
+gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 
 @app.get("/")
 async def root():
@@ -90,16 +93,14 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         
         saju_text = f"{conv_kr(saju_result['year_pillar'])} {conv_kr(saju_result['month_pillar'])} {conv_kr(saju_result['day_pillar'])} {conv_kr(saju_result['hour_pillar'])}"
 
-        # 4. AI 사주 풀이 (GPT-4o-mini)
+        # 4. 💡 구글 Gemini AI 사주 풀이
         ai_comment = "사주 분석 결과를 불러오지 못했습니다."
         try:
             prompt = f"너는 친절하고 신비로운 분위기의 사주 상담가야. 다음 사주팔자를 바탕으로 사용자에게 3문장 이내로 따뜻하고 긍정적인 조언을 해줘. (사주팔자: {saju_text})"
-            ai_response = client_ai.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=150
-            )
-            ai_comment = ai_response.choices[0].message.content
+            
+            # Gemini API 호출 (동기 방식)
+            ai_response = gemini_model.generate_content(prompt)
+            ai_comment = ai_response.text
             print("AI 풀이 성공:", ai_comment)
         except Exception as e:
             print(f"AI 풀이 에러: {e}")
@@ -143,7 +144,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         img.save(filepath)
         image_url = f"{base_url}/static/{filename}"
 
-        # 💡 7. 카카오톡으로 보낼 카드들을 하나로 묶어서 전송 (핵심 수정!)
+        # 7. 카카오톡으로 보낼 카드들을 하나로 묶어서 전송
         payload = {
             "version": "2.0",
             "template": {
