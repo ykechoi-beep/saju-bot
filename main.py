@@ -10,39 +10,40 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont
 import uuid
 from sajupy import calculate_saju
-import google.generativeai as genai
+from google import genai  # 💡 최신 구글 라이브러리로 변경
 
 app = FastAPI()
 
-# Render 환경에서는 읽기 전용이므로, 쓰기가 가능한 /tmp 디렉토리를 사용합니다.
 os.makedirs("/tmp/static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
-# 💡 구글 Gemini API 설정
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# 💡 최신 SDK 클라이언트 초기화
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# 💡 [핵심] 여러 Gemini 모델을 순차적으로 시도하는 폴백(Fallback) 함수
+# 💡 최신 SDK에 맞춘 AI 호출 함수 (최신 모델명 사용)
 def get_ai_comment_with_fallback(prompt: str) -> str:
-    # 로그에서 권장한 최신 모델(3.8-flash)을 최우선으로 시도합니다.
+    # 최신 SDK에서 지원하는 모델 목록 (최신순)
     model_candidates = [
-        'gemini-3.8-flash',       # ⭐ 최우선 시도 (구글 권장)
+        'gemini-2.5-flash',       # ⭐ 최우선 모델
         'gemini-2.0-flash',       # 1차 백업
-        'gemini-1.5-flash-latest' # 2차 백업
+        'gemini-1.5-flash'        # 2차 백업
     ]
     
     for model_name in model_candidates:
         try:
             print(f"AI 모델 시도 중: {model_name}")
-            model = genai.GenerativeModel(model_name)
-            response = model.generate_content(prompt)
+            # 최신 SDK 호출 방식
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt
+            )
             if response.text:
                 print(f"✅ AI 모델 성공: {model_name}")
                 return response.text
         except Exception as e:
             print(f"❌ {model_name} 실패: {e}")
-            continue # 실패하면 다음 모델로 넘어감
+            continue
             
-    # 모든 모델이 실패했을 때
     return "현재 AI 모델을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요."
 
 @app.get("/")
@@ -116,7 +117,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         
         saju_text = f"{conv_kr(saju_result['year_pillar'])} {conv_kr(saju_result['month_pillar'])} {conv_kr(saju_result['day_pillar'])} {conv_kr(saju_result['hour_pillar'])}"
 
-        # 4. AI 사주 풀이 (다중 모델 폴백 적용)
+        # 4. AI 사주 풀이
         ai_comment = "사주 분석 결과를 불러오지 못했습니다."
         try:
             prompt = f"너는 친절하고 신비로운 분위기의 사주 상담가야. 다음 사주팔자를 바탕으로 사용자에게 3문장 이내로 따뜻하고 긍정적인 조언을 해줘. (사주팔자: {saju_text})"
@@ -129,7 +130,6 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         img = Image.new('RGB', (800, 600), color=(15, 15, 30))
         draw = ImageDraw.Draw(img)
         
-        # 별빛 배경
         for _ in range(50):
             x, y = random.randint(0, 800), random.randint(0, 600)
             r = random.randint(1, 2)
@@ -147,7 +147,6 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         draw.text((50, 140), f"음력: {lun_date}", font=font_text, fill=(200, 200, 200))
         draw.text((50, 200), f"사주: {saju_text}", font=font_saju, fill=(0, 255, 255)) 
         
-        # 게이지 바
         draw.text((50, 280), "재물운", font=font_text, fill=(255, 255, 255))
         draw.rectangle([150, 285, 700, 305], fill=(50, 50, 50))
         draw.rectangle([150, 285, 150 + random.randint(200, 550), 305], fill=(255, 215, 0))
@@ -166,7 +165,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         img.save(filepath)
         image_url = f"{base_url}/static/{filename}"
 
-        # 7. 카카오톡 카드 전송 (이미지 + 텍스트 한 번에)
+        # 7. 카카오톡 카드 전송
         payload = {
             "version": "2.0",
             "template": {
@@ -189,8 +188,8 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
             }
         }
         
-        async with httpx.AsyncClient() as client:
-            res = await client.post(callback_url, json=payload)
+        async with httpx.AsyncClient() as client_http:
+            res = await client_http.post(callback_url, json=payload)
             print(f"카카오 응답 코드: {res.status_code}")
             if res.status_code == 200:
                 print("이미지 및 AI 풀이 전송 완료!")
