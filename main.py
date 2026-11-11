@@ -42,13 +42,9 @@ async def process_saju(callback_url: str, utterance: str):
     try:
         print(f"백그라운드 연산 시작: {utterance}")
         
-        # ==========================================
-        # 💡 여기서 KASI API를 호출합니다.
-        # ==========================================
         api_key = os.getenv("KASI_API_KEY")
         
-        # 예시: 음양력 변환 API (실제 사용하시는 API URL로 변경하셔도 됩니다)
-        # 테스트를 위해 1990년 1월 1일 날짜로 호출해 봅니다.
+        # 테스트를 위해 1990년 1월 1일 날짜로 호출합니다.
         url = "http://apis.data.go.kr/B090041/openapi/service/LrsrCldInfoService/getLunCalInfo"
         params = {
             'serviceKey': api_key,
@@ -62,23 +58,34 @@ async def process_saju(callback_url: str, utterance: str):
         response = requests.get(url, params=params, timeout=10)
         print(f"KASI API 응답 코드: {response.status_code}")
         
-        # 응답 데이터를 텍스트로 변환 (성공 시)
         if response.status_code == 200:
-            # JSON 데이터를 문자열로 잘라서 보여줍니다 (보기 좋게)
-            data_text = str(response.json())[:200] + "..." 
-            result_text = f"KASI API 통신 성공! 🌌\n\n응답 데이터:\n{data_text}"
+            data = response.json()
+            # KASI API 응답 구조에서 'item' 부분만 추출합니다.
+            item = data['response']['body']['items']['item']
+            
+            # 데이터 추출 (예: 음력 12월 5일, 병인일 등)
+            lun_year = item.get('lunYear', '알수없음')
+            lun_month = item.get('lunMonth', '알수없음')
+            lun_day = item.get('lunDay', '알수없음')
+            lun_iljin = item.get('lunIljin', '알수없음')
+            
+            # 예쁘게 글자 조합하기
+            result_text = (
+                f"입력하신 양력 1990년 1월 1일의 천문학적 분석 결과입니다.\n\n"
+                f"🌙 음력 날짜: {lun_year}년 {lun_month}월 {lun_day}일\n"
+                f"✨ 일진(기운): {lun_iljin}\n\n"
+                f"*(이 데이터를 바탕으로 사주 풀이가 진행됩니다.)*"
+            )
         else:
             result_text = "KASI API 통신에 실패했습니다. API 키를 확인해주세요."
 
-        # ==========================================
-        # 💡 카카오톡으로 보낼 예쁜 카드(JSON) 만들기
-        # ==========================================
+        # 카카오톡으로 보낼 카드 만들기
         payload = {
             "version": "2.0",
             "template": {
                 "outputs": [
                     {
-                        "textCard": {  # 텍스트 카드 형식 사용
+                        "textCard": {
                             "title": "🌌 천문학 사주 분석 결과",
                             "description": result_text,
                             "buttons": [
