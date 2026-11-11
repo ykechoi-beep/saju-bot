@@ -21,6 +21,30 @@ app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 # 💡 구글 Gemini API 설정
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
+# 💡 [핵심] 여러 Gemini 모델을 순차적으로 시도하는 폴백(Fallback) 함수
+def get_ai_comment_with_fallback(prompt: str) -> str:
+    # 로그에서 권장한 최신 모델(3.8-flash)을 최우선으로 시도합니다.
+    model_candidates = [
+        'gemini-3.8-flash',       # ⭐ 최우선 시도 (구글 권장)
+        'gemini-2.0-flash',       # 1차 백업
+        'gemini-1.5-flash-latest' # 2차 백업
+    ]
+    
+    for model_name in model_candidates:
+        try:
+            print(f"AI 모델 시도 중: {model_name}")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            if response.text:
+                print(f"✅ AI 모델 성공: {model_name}")
+                return response.text
+        except Exception as e:
+            print(f"❌ {model_name} 실패: {e}")
+            continue # 실패하면 다음 모델로 넘어감
+            
+    # 모든 모델이 실패했을 때
+    return "현재 AI 모델을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요."
+
 @app.get("/")
 async def root():
     return {"message": "소윤의 천문사주 서버가 정상 작동 중입니다!"}
@@ -92,23 +116,14 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         
         saju_text = f"{conv_kr(saju_result['year_pillar'])} {conv_kr(saju_result['month_pillar'])} {conv_kr(saju_result['day_pillar'])} {conv_kr(saju_result['hour_pillar'])}"
 
-        # 4. 💡 AI 사주 풀이 (Gemini 2.5 Flash 전용)
+        # 4. AI 사주 풀이 (다중 모델 폴백 적용)
         ai_comment = "사주 분석 결과를 불러오지 못했습니다."
         try:
             prompt = f"너는 친절하고 신비로운 분위기의 사주 상담가야. 다음 사주팔자를 바탕으로 사용자에게 3문장 이내로 따뜻하고 긍정적인 조언을 해줘. (사주팔자: {saju_text})"
-            print("AI 모델 호출 중: gemini-2.5-flash")
-            
-            model = genai.GenerativeModel('gemini-2.5-flash')
-            ai_response = model.generate_content(prompt)
-            
-            if ai_response.text:
-                ai_comment = ai_response.text
-                print("✅ AI 사주 풀이 성공")
-            else:
-                print("⚠️ AI 응답이 비어있습니다.")
-                
+            ai_comment = get_ai_comment_with_fallback(prompt)
         except Exception as e:
-            print(f"❌ AI 풀이 에러: {e}")
+            print(f"AI 풀이 최종 에러: {e}")
+            ai_comment = f"⚠️ AI 에러 발생: {str(e)}"
 
         # 5. UI 고도화: 별빛 배경 및 RPG 게이지 3개 그리기
         img = Image.new('RGB', (800, 600), color=(15, 15, 30))
