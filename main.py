@@ -10,7 +10,7 @@ import uuid
 
 app = FastAPI()
 
-# 💡 Render 환경에서는 읽기 전용이므로, 쓰기가 가능한 /tmp 디렉토리를 사용합니다.
+# Render 환경에서는 읽기 전용이므로, 쓰기가 가능한 /tmp 디렉토리를 사용합니다.
 os.makedirs("/tmp/static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
@@ -50,25 +50,29 @@ async def process_saju(callback_url: str, base_url: str):
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
         item = data['response']['body']['items']['item']
+        
         lun_date = f"{item.get('lunYear')}년 {item.get('lunMonth')}월 {item.get('lunDay')}일"
-        iljin = item.get('lunIljin', '알수없음')
+        
+        # 💡 [수정] 한자가 깨지지 않도록 괄호( 앞부분만 잘라냅니다. (예: '병인(丙寅)' -> '병인')
+        iljin_raw = item.get('lunIljin', '알수없음')
+        iljin = iljin_raw.split('(')[0] if iljin_raw else '알수없음'
 
         # 2. 파이썬으로 RPG 대시보드 이미지 그리기 (Pillow 사용)
         img = Image.new('RGB', (800, 400), color=(30, 30, 45)) # 어두운 남색 배경
         draw = ImageDraw.Draw(img)
         
-        # 폰트 불러오기 (업로드하신 파일 이름과 정확히 일치해야 합니다)
+        # 폰트 불러오기
         try:
             font_title = ImageFont.truetype("NanumGothic-Regular.ttf", 40)
             font_text = ImageFont.truetype("NanumGothic-Regular.ttf", 30)
         except Exception as font_e:
             print(f"폰트 로드 실패: {font_e}")
-            font_title = font_text = None # 폰트가 없으면 기본 폰트 사용 (한글 깨짐)
+            font_title = font_text = None 
 
-        # 글씨 쓰기
-        draw.text((50, 50), "🌌 천문학 사주 분석 결과", font=font_title, fill=(255, 215, 0)) # 노란색 제목
-        draw.text((50, 150), f"🌙 음력 날짜: {lun_date}", font=font_text, fill=(255, 255, 255))
-        draw.text((50, 220), f"✨ 일진(기운): {iljin}", font=font_text, fill=(255, 255, 255))
+        # 💡 [수정] 폰트에서 지원하지 않는 이모지(🌌, 🌙, ✨)를 제거하여 깨짐을 방지합니다.
+        draw.text((50, 50), "천문학 사주 분석 결과", font=font_title, fill=(255, 215, 0)) 
+        draw.text((50, 150), f"음력 날짜: {lun_date}", font=font_text, fill=(255, 255, 255))
+        draw.text((50, 220), f"일진(기운): {iljin}", font=font_text, fill=(255, 255, 255))
         
         # 게이지 바 그리기 (예시)
         draw.rectangle([50, 300, 750, 330], fill=(100, 100, 100)) # 배경 바
