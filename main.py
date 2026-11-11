@@ -2,7 +2,7 @@ import os
 import httpx
 import asyncio
 import requests
-import re  # 💡 한글에서 숫자만 뽑아내기 위한 도구 추가
+import re
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -11,7 +11,6 @@ import uuid
 
 app = FastAPI()
 
-# Render 환경에서는 읽기 전용이므로, 쓰기가 가능한 /tmp 디렉토리를 사용합니다.
 os.makedirs("/tmp/static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
@@ -28,7 +27,10 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
     
     action = body.get("action", {})
     params = action.get("params", {})
+    
+    # 💡 날짜와 시간을 모두 가져옵니다.
     birth_date = params.get("birthDate", "1990-01-01") 
+    birth_time = params.get("birthTime", "시간 모름") 
     
     base_url = str(request.base_url).rstrip('/')
     
@@ -36,28 +38,27 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
         "version": "2.0",
         "useCallback": True,
         "template": {
-            "outputs": [{"simpleText": {"text": f"🕯️ {birth_date}의 우주의 기운을 모아 분석하고 있습니다..."}}]
+            "outputs": [{"simpleText": {"text": f"🕯️ {birth_date} {birth_time}의 우주의 기운을 모아 분석하고 있습니다..."}}]
         }
     }
     
     if callback_url:
-        background_tasks.add_task(process_saju, callback_url, base_url, birth_date)
+        # 💡 시간도 함께 넘겨줍니다.
+        background_tasks.add_task(process_saju, callback_url, base_url, birth_date, birth_time)
         
     return JSONResponse(content=immediate_response)
 
-async def process_saju(callback_url: str, base_url: str, birth_date: str):
+async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_time: str):
     try:
         # 1. KASI API 호출을 위해 날짜 쪼개기
         try:
-            # 💡 [수정] 정규식(re)을 사용해 문장에서 '숫자'만 모두 추출합니다.
-            # 예: "1995년 5월 5일" -> ['1995', '5', '5']
             numbers = re.findall(r'\d+', birth_date)
             if len(numbers) >= 3:
                 year = numbers[0]
-                month = numbers[1].zfill(2) # 5 -> 05 로 만들어줌
-                day = numbers[2].zfill(2)   # 5 -> 05 로 만들어줌
+                month = numbers[1].zfill(2)
+                day = numbers[2].zfill(2)
             else:
-                year, month, day = "1990", "01", "01" # 형식이 이상하면 기본값
+                year, month, day = "1990", "01", "01"
         except:
             year, month, day = "1990", "01", "01"
 
@@ -80,7 +81,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str):
         iljin = iljin_raw.split('(')[0] if iljin_raw else '알수없음'
 
         # 2. 파이썬으로 RPG 대시보드 이미지 그리기
-        img = Image.new('RGB', (800, 400), color=(30, 30, 45))
+        img = Image.new('RGB', (800, 450), color=(30, 30, 45)) # 높이를 450으로 살짝 늘렸습니다.
         draw = ImageDraw.Draw(img)
         
         try:
@@ -90,14 +91,15 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str):
             print(f"폰트 로드 실패: {font_e}")
             font_title = font_text = None 
 
-        draw.text((50, 50), "천문학 사주 분석 결과", font=font_title, fill=(255, 215, 0)) 
-        draw.text((50, 150), f"양력 입력: {year}년 {month}월 {day}일", font=font_text, fill=(200, 200, 200))
-        draw.text((50, 200), f"음력 변환: {lun_date}", font=font_text, fill=(255, 255, 255))
-        draw.text((50, 250), f"일진(기운): {iljin}", font=font_text, fill=(255, 255, 255))
+        draw.text((50, 40), "천문학 사주 분석 결과", font=font_title, fill=(255, 215, 0)) 
+        draw.text((50, 120), f"양력 입력: {year}년 {month}월 {day}일", font=font_text, fill=(200, 200, 200))
+        # 💡 입력받은 시간을 이미지에 추가합니다.
+        draw.text((50, 170), f"출생 시간: {birth_time}", font=font_text, fill=(200, 200, 200)) 
+        draw.text((50, 220), f"음력 변환: {lun_date}", font=font_text, fill=(255, 255, 255))
+        draw.text((50, 270), f"일진(기운): {iljin}", font=font_text, fill=(255, 255, 255))
         
-        # 게이지 바 그리기
-        draw.rectangle([50, 320, 750, 350], fill=(100, 100, 100))
-        draw.rectangle([50, 320, 550, 350], fill=(0, 255, 127))
+        draw.rectangle([50, 350, 750, 380], fill=(100, 100, 100))
+        draw.rectangle([50, 350, 550, 380], fill=(0, 255, 127))
 
         # 3. 이미지 저장 및 URL 만들기
         filename = f"dashboard_{uuid.uuid4().hex[:8]}.png"
@@ -113,12 +115,12 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str):
                     {
                         "basicCard": {
                             "title": f"{year}년 {month}월 {day}일 천문학 사주",
-                            "description": "KASI 데이터를 바탕으로 분석한 결과입니다.",
+                            "description": f"출생 시간: {birth_time}",
                             "thumbnail": {
                                 "imageUrl": image_url,
                                 "fixedRatio": True,
                                 "width": 800,
-                                "height": 400
+                                "height": 450
                             },
                             "buttons": [
                                 {"action": "message", "label": "다시 분석하기", "messageText": "사주 봐줘"}
