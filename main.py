@@ -15,10 +15,16 @@ async def root():
 @app.post("/kakao/webhook")
 async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
+    print(f"========== 카카오가 보낸 데이터 ==========")
+    print(body) # <--- 카카오가 보낸 모든 데이터를 로그에 찍습니다.
+    print(f"==========================================")
+    
     user_request = body.get("userRequest", {})
     utterance = user_request.get("utterance", "")
     callback_url = user_request.get("callbackUrl")
     
+    print(f"추출된 콜백 URL: {callback_url}") # <--- 콜백 URL이 있는지 확인
+
     immediate_response = {
         "version": "2.0",
         "useCallback": True,
@@ -34,8 +40,11 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
     }
     
     if callback_url:
+        print("백그라운드 작업을 시작합니다.")
         background_tasks.add_task(process_saju, callback_url, utterance)
-    
+    else:
+        print("🚨 에러: 콜백 URL이 없습니다. 카카오 오픈빌더 설정을 확인하세요.")
+        
     return JSONResponse(content=immediate_response)
 
 async def process_saju(callback_url: str, utterance: str):
