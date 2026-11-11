@@ -5,3 +5,4 @@ requests
 pillow
 matplotlib
 httpx
+sajupy
