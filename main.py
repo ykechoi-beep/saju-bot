@@ -4,6 +4,7 @@ import asyncio
 import requests
 import re
 import random
+import time  # 💡 재시도를 위한 time 모듈 추가
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -20,33 +21,51 @@ app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 # 최신 SDK 클라이언트 초기화
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# 💡 [수정] 최신 모델명으로 교체한 AI 호출 함수
+# 💡 [핵심 수정] 503/429 에러 시 자동 재시도 및 안정적인 모델 폴백
 def get_ai_comment_with_fallback(prompt: str) -> str:
-    # 현재 사용 가능한 최신 모델 목록 (2026년 기준)
+    # 유료 전용 모델(gemini-4-argon)을 제외하고 무료로 안정적인 모델만 배치
     model_candidates = [
-        'gemini-3.8-flash',        # ⭐ 최우선 모델 (가장 지능적인 Flash 모델)
-        'gemini-3.5-flash-lite',   # 1차 백업 (빠르고 비용 효율적)
-        'gemini-4-argon'           # 2차 백업 (최상위 추론 모델)
+        'gemini-3.8-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-1.5-flash'
     ]
     
-    errors = [] 
+    errors = []
     
     for model_name in model_candidates:
-        try:
-            print(f"AI 모델 시도 중: {model_name}")
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
-            if response.text:
-                print(f"✅ AI 모델 성공: {model_name}")
-                return response.text
-        except Exception as e:
-            error_msg = f"[{model_name} 실패: {str(e)[:60]}...]" 
-            print(f"❌ {error_msg}")
+        # 💡 503/429 오류 시 최대 3회까지 재시도 (1초, 2초, 4초 대기)
+        for attempt in range(3):
+            try:
+                print(f"AI 모델 시도 중: {model_name} (시도 {attempt+1}/3)")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt
+                )
+                if response.text:
+                    print(f"✅ AI 모델 성공: {model_name}")
+                    return response.text
+            except Exception as e:
+                error_str = str(e)
+                # 503(서버 과부하) 또는 429(할당량 초과)인 경우 대기 후 재시도
+                if "503" in error_str or "429" in error_str or "UNAVAILABLE" in error_str:
+                    wait_time = 2 ** attempt  # 1초, 2초, 4초 대기
+                    print(f"⚠️ {model_name} 일시적 오류, {wait_time}초 후 재시도...")
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    # 그 외 오류(잘못된 모델명 등)는 재시도 없이 다음 모델로 넘어감
+                    error_msg = f"[{model_name} 실패: {error_str[:60]}...]"
+                    print(f"❌ {error_msg}")
+                    errors.append(error_msg)
+                    break
+        else:
+            # 3회 재시도 모두 실패한 경우
+            error_msg = f"[{model_name} 최대 재시도 초과]"
             errors.append(error_msg)
+            print(f"❌ {error_msg}")
             continue
-            
+    
+    # 모든 모델이 실패했을 때
     return f"⚠️ AI 모델 호출 실패:\n" + "\n".join(errors)
 
 @app.get("/")
@@ -120,7 +139,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         
         saju_text = f"{conv_kr(saju_result['year_pillar'])} {conv_kr(saju_result['month_pillar'])} {conv_kr(saju_result['day_pillar'])} {conv_kr(saju_result['hour_pillar'])}"
 
-        # 4. AI 사주 풀이
+        # 4. AI 사주 풀이 (재시도 로직 포함)
         ai_comment = "사주 분석 결과를 불러오지 못했습니다."
         try:
             prompt = f"너는 친절하고 신비로운 분위기의 사주 상담가야. 다음 사주팔자를 바탕으로 사용자에게 3문장 이내로 따뜻하고 긍정적인 조언을 해줘. (사주팔자: {saju_text})"
