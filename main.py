@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont
 import uuid
+from sajupy import calculate_saju  # 💡 사주팔자 계산 라이브러리 추가
 
 app = FastAPI()
 
@@ -28,7 +29,6 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
     action = body.get("action", {})
     params = action.get("params", {})
     
-    # 💡 날짜와 시간을 모두 가져옵니다.
     birth_date = params.get("birthDate", "1990-01-01") 
     birth_time = params.get("birthTime", "시간 모름") 
     
@@ -43,32 +43,52 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
     }
     
     if callback_url:
-        # 💡 시간도 함께 넘겨줍니다.
         background_tasks.add_task(process_saju, callback_url, base_url, birth_date, birth_time)
         
     return JSONResponse(content=immediate_response)
 
 async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_time: str):
     try:
-        # 1. KASI API 호출을 위해 날짜 쪼개기
-        try:
-            numbers = re.findall(r'\d+', birth_date)
-            if len(numbers) >= 3:
-                year = numbers[0]
-                month = numbers[1].zfill(2)
-                day = numbers[2].zfill(2)
-            else:
-                year, month, day = "1990", "01", "01"
-        except:
-            year, month, day = "1990", "01", "01"
+        # 1. 날짜에서 연, 월, 일 추출
+        numbers = re.findall(r'\d+', birth_date)
+        if len(numbers) >= 3:
+            year = int(numbers[0])
+            month = int(numbers[1])
+            day = int(numbers[2])
+        else:
+            year, month, day = 1990, 1, 1
 
+        # 2. 한글 시간(예: 오후 3시 30분)을 24시간제로 변환
+        hour_24 = 12  # 기본값 (정오)
+        minute = 0
+        
+        # 오전/오후 확인
+        is_pm = "오후" in birth_time
+        is_am = "오전" in birth_time
+        
+        # 시간 숫자 추출
+        time_numbers = re.findall(r'\d+', birth_time)
+        if time_numbers:
+            raw_hour = int(time_numbers[0])
+            if len(time_numbers) > 1:
+                minute = int(time_numbers[1])
+            
+            # 24시간제 변환 로직
+            if is_pm and raw_hour < 12:
+                hour_24 = raw_hour + 12
+            elif is_am and raw_hour == 12:
+                hour_24 = 0
+            else:
+                hour_24 = raw_hour
+
+        # 3. KASI API 호출 (음력 변환용)
         api_key = os.getenv("KASI_API_KEY")
         url = "http://apis.data.go.kr/B090041/openapi/service/LrsrCldInfoService/getLunCalInfo"
         params = {
             'serviceKey': api_key, 
-            'solYear': year, 
-            'solMonth': month, 
-            'solDay': day, 
+            'solYear': str(year), 
+            'solMonth': str(month).zfill(2), 
+            'solDay': str(day).zfill(2), 
             '_type': 'json'
         }
         
@@ -80,34 +100,53 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         iljin_raw = item.get('lunIljin', '알수없음')
         iljin = iljin_raw.split('(')[0] if iljin_raw else '알수없음'
 
-        # 2. 파이썬으로 RPG 대시보드 이미지 그리기
-        img = Image.new('RGB', (800, 450), color=(30, 30, 45)) # 높이를 450으로 살짝 늘렸습니다.
+        # 4. 💡 sajupy를 이용한 진짜 사주팔자(8글자) 계산
+        try:
+            saju_result = calculate_saju(year, month, day, hour_24, minute)
+            year_pillar = saju_result.get('year_pillar', '?')
+            month_pillar = saju_result.get('month_pillar', '?')
+            day_pillar = saju_result.get('day_pillar', '?')
+            hour_pillar = saju_result.get('hour_pillar', '?')
+            
+            saju_text = f"{year_pillar} {month_pillar} {day_pillar} {hour_pillar}"
+        except Exception as e:
+            print(f"사주 계산 실패: {e}")
+            saju_text = "계산 불가"
+
+        # 5. 파이썬으로 RPG 대시보드 이미지 그리기
+        img = Image.new('RGB', (800, 550), color=(30, 30, 45)) # 세로로 더 길게
         draw = ImageDraw.Draw(img)
         
         try:
             font_title = ImageFont.truetype("NanumGothic-Regular.ttf", 40)
             font_text = ImageFont.truetype("NanumGothic-Regular.ttf", 30)
+            font_saju = ImageFont.truetype("NanumGothic-Regular.ttf", 35)
         except Exception as font_e:
             print(f"폰트 로드 실패: {font_e}")
-            font_title = font_text = None 
+            font_title = font_text = font_saju = None 
 
+        # 이미지에 글씨 쓰기
         draw.text((50, 40), "천문학 사주 분석 결과", font=font_title, fill=(255, 215, 0)) 
         draw.text((50, 120), f"양력 입력: {year}년 {month}월 {day}일", font=font_text, fill=(200, 200, 200))
-        # 💡 입력받은 시간을 이미지에 추가합니다.
         draw.text((50, 170), f"출생 시간: {birth_time}", font=font_text, fill=(200, 200, 200)) 
         draw.text((50, 220), f"음력 변환: {lun_date}", font=font_text, fill=(255, 255, 255))
-        draw.text((50, 270), f"일진(기운): {iljin}", font=font_text, fill=(255, 255, 255))
         
-        draw.rectangle([50, 350, 750, 380], fill=(100, 100, 100))
-        draw.rectangle([50, 350, 550, 380], fill=(0, 255, 127))
+        # 사주팔자 강조해서 표시
+        draw.text((50, 290), f"사주팔자: {saju_text}", font=font_saju, fill=(0, 255, 255)) 
+        
+        draw.text((50, 360), f"일진(기운): {iljin}", font=font_text, fill=(255, 255, 255))
+        
+        # 게이지 바 그리기
+        draw.rectangle([50, 450, 750, 480], fill=(100, 100, 100))
+        draw.rectangle([50, 450, 550, 480], fill=(0, 255, 127))
 
-        # 3. 이미지 저장 및 URL 만들기
+        # 6. 이미지 저장 및 URL 만들기
         filename = f"dashboard_{uuid.uuid4().hex[:8]}.png"
         filepath = f"/tmp/static/{filename}"
         img.save(filepath)
         image_url = f"{base_url}/static/{filename}"
 
-        # 4. 카카오톡으로 이미지 카드 전송
+        # 7. 카카오톡으로 이미지 카드 전송
         payload = {
             "version": "2.0",
             "template": {
@@ -115,12 +154,12 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
                     {
                         "basicCard": {
                             "title": f"{year}년 {month}월 {day}일 천문학 사주",
-                            "description": f"출생 시간: {birth_time}",
+                            "description": f"사주팔자: {saju_text}",
                             "thumbnail": {
                                 "imageUrl": image_url,
                                 "fixedRatio": True,
                                 "width": 800,
-                                "height": 450
+                                "height": 550
                             },
                             "buttons": [
                                 {"action": "message", "label": "다시 분석하기", "messageText": "사주 봐줘"}
