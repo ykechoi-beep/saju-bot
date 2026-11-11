@@ -39,14 +39,24 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
     return JSONResponse(content=immediate_response)
 
 async def process_saju(callback_url: str, utterance: str):
-    await asyncio.sleep(2) # 연산 시간 가정
-    payload = {
-        "version": "2.0",
-        "template": {
-            "outputs": [
-                {"simpleText": {"text": f"'{utterance}'에 대한 분석이 완료되었습니다. (임시 결과)"}}
-            ]
+    try:
+        print(f"백그라운드 연산 시작: {utterance}")
+        await asyncio.sleep(2) # 연산 시간 가정
+        
+        payload = {
+            "version": "2.0",
+            "template": {
+                "outputs": [
+                    {"simpleText": {"text": f"'{utterance}'에 대한 분석이 완료되었습니다. (임시 결과)"}}
+                ]
+            }
         }
-    }
-    async with httpx.AsyncClient() as client:
+        
+        print(f"콜백 URL로 전송 시도: {callback_url}")
+        async with httpx.AsyncClient() as client:
+            response = await client.post(callback_url, json=payload)
+            print(f"카카오 응답 코드: {response.status_code}")
+            
+    except Exception as e:
+        print(f"에러 발생: {e}") # 에러를 로그에 확실히 남깁니다.
         await client.post(callback_url, json=payload)
