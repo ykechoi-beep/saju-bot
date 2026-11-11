@@ -1,30 +1,24 @@
 import os
-from fastapi import FastAPI, Request, BackgroundTasks
-from fastapi.responses import JSONResponse
 import httpx
 import asyncio
+import requests # KASI API 호출용
+from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# 테스트용 간단한 엔드포인트 (나중에 사주 로직으로 대체)
 @app.get("/")
 async def root():
     return {"message": "소윤의 천문사주 서버가 정상 작동 중입니다!"}
 
-# 카카오톡 스킬 서버 엔드포인트
 @app.post("/kakao/webhook")
 async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
     body = await request.json()
-    print(f"========== 카카오가 보낸 데이터 ==========")
-    print(body) # <--- 카카오가 보낸 모든 데이터를 로그에 찍습니다.
-    print(f"==========================================")
     
     user_request = body.get("userRequest", {})
     utterance = user_request.get("utterance", "")
     callback_url = user_request.get("callbackUrl")
     
-    print(f"추출된 콜백 URL: {callback_url}") # <--- 콜백 URL이 있는지 확인
-
     immediate_response = {
         "version": "2.0",
         "useCallback": True,
@@ -40,32 +34,70 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
     }
     
     if callback_url:
-        print("백그라운드 작업을 시작합니다.")
         background_tasks.add_task(process_saju, callback_url, utterance)
-    else:
-        print("🚨 에러: 콜백 URL이 없습니다. 카카오 오픈빌더 설정을 확인하세요.")
         
     return JSONResponse(content=immediate_response)
 
 async def process_saju(callback_url: str, utterance: str):
     try:
         print(f"백그라운드 연산 시작: {utterance}")
-        await asyncio.sleep(2) # 연산 시간 가정
         
+        # ==========================================
+        # 💡 여기서 KASI API를 호출합니다.
+        # ==========================================
+        api_key = os.getenv("KASI_API_KEY")
+        
+        # 예시: 음양력 변환 API (실제 사용하시는 API URL로 변경하셔도 됩니다)
+        # 테스트를 위해 1990년 1월 1일 날짜로 호출해 봅니다.
+        url = "http://apis.data.go.kr/B090041/openapi/service/LrsrCldInfoService/getLunCalInfo"
+        params = {
+            'serviceKey': api_key,
+            'solYear': '1990',
+            'solMonth': '01',
+            'solDay': '01',
+            '_type': 'json'
+        }
+        
+        print("KASI API 호출 중...")
+        response = requests.get(url, params=params, timeout=10)
+        print(f"KASI API 응답 코드: {response.status_code}")
+        
+        # 응답 데이터를 텍스트로 변환 (성공 시)
+        if response.status_code == 200:
+            # JSON 데이터를 문자열로 잘라서 보여줍니다 (보기 좋게)
+            data_text = str(response.json())[:200] + "..." 
+            result_text = f"KASI API 통신 성공! 🌌\n\n응답 데이터:\n{data_text}"
+        else:
+            result_text = "KASI API 통신에 실패했습니다. API 키를 확인해주세요."
+
+        # ==========================================
+        # 💡 카카오톡으로 보낼 예쁜 카드(JSON) 만들기
+        # ==========================================
         payload = {
             "version": "2.0",
             "template": {
                 "outputs": [
-                    {"simpleText": {"text": f"'{utterance}'에 대한 분석이 완료되었습니다. (임시 결과)"}}
+                    {
+                        "textCard": {  # 텍스트 카드 형식 사용
+                            "title": "🌌 천문학 사주 분석 결과",
+                            "description": result_text,
+                            "buttons": [
+                                {
+                                    "action": "message",
+                                    "label": "다시 분석하기",
+                                    "messageText": "사주 봐줘"
+                                }
+                            ]
+                        }
+                    }
                 ]
             }
         }
         
         print(f"콜백 URL로 전송 시도: {callback_url}")
         async with httpx.AsyncClient() as client:
-            response = await client.post(callback_url, json=payload)
-            print(f"카카오 응답 코드: {response.status_code}")
+            res = await client.post(callback_url, json=payload)
+            print(f"카카오 응답 코드: {res.status_code}")
             
     except Exception as e:
-        print(f"에러 발생: {e}") # 에러를 로그에 확실히 남깁니다.
-        await client.post(callback_url, json=payload)
+        print(f"에러 발생: {e}")
