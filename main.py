@@ -14,21 +14,20 @@ import google.generativeai as genai
 
 app = FastAPI()
 
+# Render 환경에서는 읽기 전용이므로, 쓰기가 가능한 /tmp 디렉토리를 사용합니다.
 os.makedirs("/tmp/static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
-# 💡 구글 Gemini API 설정
+# 💡 구글 Gemini API 설정 (환경변수에서 키를 가져옵니다)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# 💡 [추가] 여러 모델을 순차적으로 시도하는 폴백(Fallback) 함수
+# 💡 [핵심] 여러 Gemini 모델을 순차적으로 시도하는 폴백(Fallback) 함수
 def get_ai_comment_with_fallback(prompt: str) -> str:
-    # 시도할 모델 목록 (구글에서 최신 모델을 권장하므로 최신순으로 배치)
+    # 2.5 Flash를 최우선으로 시도하고, 실패 시 하위 버전으로 자동 전환
     model_candidates = [
-        'gemini-3.8-flash',
-        'gemini-3.5-flash',
-        'gemini-2.5-flash',
-        'gemini-2.0-flash',
-        'gemini-1.5-flash-latest'
+        'gemini-2.5-flash',       # ⭐ 메인 모델
+        'gemini-2.0-flash',       # 1차 백업
+        'gemini-1.5-flash-latest' # 2차 백업
     ]
     
     for model_name in model_candidates:
@@ -117,14 +116,11 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         
         saju_text = f"{conv_kr(saju_result['year_pillar'])} {conv_kr(saju_result['month_pillar'])} {conv_kr(saju_result['day_pillar'])} {conv_kr(saju_result['hour_pillar'])}"
 
-        # 4. 💡 구글 Gemini AI 사주 풀이 (폴백 함수 적용)
+        # 4. AI 사주 풀이 (Gemini 2.5 Flash 폴백 적용)
         ai_comment = "사주 분석 결과를 불러오지 못했습니다."
         try:
             prompt = f"너는 친절하고 신비로운 분위기의 사주 상담가야. 다음 사주팔자를 바탕으로 사용자에게 3문장 이내로 따뜻하고 긍정적인 조언을 해줘. (사주팔자: {saju_text})"
-            
-            # 위에서 만든 다중 모델 폴백 함수를 호출합니다.
             ai_comment = get_ai_comment_with_fallback(prompt)
-            
         except Exception as e:
             print(f"AI 풀이 최종 에러: {e}")
 
@@ -132,6 +128,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         img = Image.new('RGB', (800, 600), color=(15, 15, 30))
         draw = ImageDraw.Draw(img)
         
+        # 별빛 배경
         for _ in range(50):
             x, y = random.randint(0, 800), random.randint(0, 600)
             r = random.randint(1, 2)
@@ -149,6 +146,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         draw.text((50, 140), f"음력: {lun_date}", font=font_text, fill=(200, 200, 200))
         draw.text((50, 200), f"사주: {saju_text}", font=font_saju, fill=(0, 255, 255)) 
         
+        # 게이지 바
         draw.text((50, 280), "재물운", font=font_text, fill=(255, 255, 255))
         draw.rectangle([150, 285, 700, 305], fill=(50, 50, 50))
         draw.rectangle([150, 285, 150 + random.randint(200, 550), 305], fill=(255, 215, 0))
@@ -161,13 +159,13 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         draw.rectangle([150, 405, 700, 425], fill=(50, 50, 50))
         draw.rectangle([150, 405, 150 + random.randint(200, 550), 425], fill=(0, 255, 127))
 
-        # 6. 이미지 저장 및 URL 만들기
+        # 6. 이미지 저장 및 URL 생성
         filename = f"dashboard_{uuid.uuid4().hex[:8]}.png"
         filepath = f"/tmp/static/{filename}"
         img.save(filepath)
         image_url = f"{base_url}/static/{filename}"
 
-        # 7. 카카오톡으로 보낼 카드들을 하나로 묶어서 전송
+        # 7. 카카오톡 카드 전송 (이미지 + 텍스트 한 번에)
         payload = {
             "version": "2.0",
             "template": {
