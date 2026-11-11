@@ -66,7 +66,7 @@ HTML_TEMPLATE = """
             background: #fff; 
             border: 2px solid #d4af37; /* 황금색 테두리 */
             border-radius: 12px; 
-            padding: 30px 20px 20px 20px; /* 위쪽 여백을 충분히 줌 */
+            padding: 40px 20px 20px 20px; /* 위쪽 여백을 충분히 줌 */
             box-shadow: 0 4px 10px rgba(0,0,0,0.08);
             margin-bottom: 20px;
             box-sizing: border-box;
@@ -80,20 +80,23 @@ HTML_TEMPLATE = """
             width: 100%;
             box-sizing: border-box;
         }
+        /* 💡 입력창 크기 확대 적용 */
         input[type="number"] { 
-            padding: 12px 2px; 
-            border: 1px solid #ccc; 
-            border-radius: 8px; 
+            padding: 15px 5px; 
+            border: 2px solid #d4af37; 
+            border-radius: 10px; 
             background: #fafafa; 
             color: #333; 
-            width: 22%; /* 고정 픽셀 대신 %로 변경하여 테두리 뚫림 방지 */
-            max-width: 80px;
+            width: 23%; 
+            max-width: 85px;
+            height: 55px; 
             text-align: center; 
             font-family: 'Malgun Gothic', sans-serif;
-            font-size: 16px;
+            font-size: 20px; 
+            font-weight: bold;
             box-sizing: border-box;
         }
-        input::placeholder { color: #aaa; }
+        input::placeholder { color: #aaa; font-weight: normal;}
         
         .radio-group { 
             margin-bottom: 15px; 
@@ -238,7 +241,7 @@ async def saju_page():
 @app.get("/saju/result", response_class=HTMLResponse)
 async def saju_result(year: int, month: int, day: int, hour: int, calendar: str, gender: str, fortune_type: str):
     try:
-        # 사주 계산 (sajupy는 기본적으로 양력 기준으로 계산합니다. 음력 처리는 추후 고도화 필요)
+        # 사주 계산
         saju_result = calculate_saju(year, month, day, hour, 0)
         hanja_to_hangul = {"甲": "갑", "乙": "을", "丙": "병", "丁": "정", "戊": "무", "己": "기", "庚": "경", "辛": "신", "壬": "임", "癸": "계", "子": "자", "丑": "축", "寅": "인", "卯": "묘", "辰": "진", "巳": "사", "午": "오", "未": "미", "申": "신", "酉": "유", "戌": "술", "亥": "해"}
         def conv_kr(t): return "".join([hanja_to_hangul.get(char, char) for char in t])
