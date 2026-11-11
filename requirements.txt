@@ -6,4 +6,4 @@ pillow
 matplotlib
 httpx
 sajupy
-openai
+google-generativeai
