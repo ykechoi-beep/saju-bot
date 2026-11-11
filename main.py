@@ -19,8 +19,8 @@ app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
 # 💡 구글 Gemini API 설정
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-# 무료로 사용하기 좋은 Gemini 1.5 Flash 모델 사용
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+# 무료로 사용하기 좋은 Gemini 2.0 Flash 모델 사용
+gemini_model = genai.GenerativeModel('gemini-2.0-flash')
 
 @app.get("/")
 async def root():
