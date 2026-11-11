@@ -1,213 +1,212 @@
 import os
-import httpx
-import asyncio
-import requests
-import re
 import random
+import requests
 import time
-from fastapi import FastAPI, Request, BackgroundTasks
-from fastapi.responses import JSONResponse
-from fastapi.staticfiles import StaticFiles
-from PIL import Image, ImageDraw, ImageFont
-import uuid
+from fastapi import FastAPI, Request, Form
+from fastapi.responses import HTMLResponse
 from sajupy import calculate_saju
 from google import genai
 
 app = FastAPI()
-os.makedirs("/tmp/static", exist_ok=True)
-app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
+# Gemini AI 클라이언트 초기화
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-def draw_stars(draw, width, height):
-    for _ in range(80):
-        x, y = random.randint(0, width), random.randint(0, height)
-        r = random.randint(1, 3)
-        draw.ellipse([x, y, x+r, y+r], fill=(255, 255, 255))
+# AI 풀이 함수 (재시도 로직 포함)
+def get_ai_response(prompt: str) -> str:
+    model_candidates = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-1.5-flash']
+    for model_name in model_candidates:
+        for attempt in range(3):
+            try:
+                response = client.models.generate_content(model=model_name, contents=prompt)
+                if response.text: return response.text
+            except Exception as e:
+                if "503" in str(e) or "429" in str(e) or "UNAVAILABLE" in str(e):
+                    time.sleep(2 ** attempt)
+                    continue
+                else: break
+    return "현재 우주의 기운이 혼잡하여 분석이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
 
-def parse_date(date_str: str, time_str: str):
-    # 날짜 파싱 (YYYY, MM, DD)
-    date_nums = re.findall(r'\d+', date_str)
-    year, month, day = 1990, 1, 1
-    if len(date_nums) >= 3:
-        year, month, day = int(date_nums[0]), int(date_nums[1]), int(date_nums[2])
+# --- 동양 테마의 세련된 웹페이지 디자인 (HTML/CSS) ---
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>소윤의 사주타로</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&display=swap');
         
-    # 시간 파싱 (HH, MM)
-    hour_24, minute = 12, 0
-    time_nums = re.findall(r'\d+', time_str)
-    if time_nums:
-        raw_hour = int(time_nums[0])
-        if len(time_nums) > 1: minute = int(time_nums[1])
-        if "오후" in time_str and raw_hour < 12: hour_24 = raw_hour + 12
-        elif "오전" in time_str and raw_hour == 12: hour_24 = 0
-        else: hour_24 = raw_hour
-        
-    return year, month, day, hour_24, minute
-
-@app.get("/")
-async def root():
-    return {"message": "서버 정상 작동 중"}
-
-@app.post("/kakao/webhook")
-async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
-    body = await request.json()
-    user_request = body.get("userRequest", {})
-    callback_url = user_request.get("callbackUrl")
-    action = body.get("action", {})
-    params = action.get("params", {})
-    block_name = user_request.get("block", {}).get("name", "")
-    utterance = user_request.get("utterance", "")
-    
-    base_url = str(request.base_url).rstrip('/')
-    
-    immediate_response = {
-        "version": "2.0",
-        "useCallback": True,
-        "template": {"outputs": [{"simpleText": {"text": "🔮 분석을 준비합니다..."}}]}
-    }
-    
-    if callback_url:
-        background_tasks.add_task(route_process, callback_url, base_url, block_name, params, utterance)
-        
-    return JSONResponse(content=immediate_response)
-
-async def route_process(callback_url: str, base_url: str, block_name: str, params: dict, utterance: str):
-    if "메인메뉴" in block_name or "웰컴" in block_name:
-        await process_main_menu(callback_url, base_url)
-    elif "사주" in block_name:
-        birth_date = params.get("birthDate", "")
-        birth_time = params.get("birthTime", "")
-        
-        # 💡 만약 사용자가 그냥 "사주" 버튼을 눌러서 날짜가 없으면 폼 이미지 전송
-        if not birth_date:
-            await process_saju_input_form(callback_url, base_url)
-        else:
-            # 날짜와 시간이 모두 있으면 결과 전송
-            await process_saju_result(callback_url, base_url, birth_date, birth_time)
-
-# --- 메인 메뉴 ---
-async def process_main_menu(callback_url: str, base_url: str):
-    img = Image.new('RGB', (800, 400), color=(10, 10, 25))
-    draw = ImageDraw.Draw(img)
-    draw_stars(draw, 800, 400)
-    try:
-        font_title = ImageFont.truetype("NanumGothic-Regular.ttf", 50)
-        font_sub = ImageFont.truetype("NanumGothic-Regular.ttf", 30)
-    except: font_title = font_sub = None
-    draw.text((180, 120), "🌌 소윤의 사주타로", font=font_title, fill=(255, 215, 0))
-    draw.text((230, 220), "당신의 우주를 분석해드립니다", font=font_sub, fill=(200, 200, 200))
-
-    filename = f"main_{uuid.uuid4().hex[:8]}.png"
-    img.save(f"/tmp/static/{filename}")
-    
-    payload = {
-        "version": "2.0",
-        "template": {
-            "outputs": [
-                {"basicCard": {
-                    "title": "환영합니다!",
-                    "description": "원하시는 서비스를 아래 버튼에서 선택해주세요.",
-                    "thumbnail": {"imageUrl": f"{base_url}/static/{filename}", "fixedRatio": True, "width": 800, "height": 400},
-                    "buttons": [
-                        {"action": "message", "label": "🔮 사주 보기", "messageText": "사주"},
-                        {"action": "message", "label": "🃏 타로 보기", "messageText": "타로"},
-                        {"action": "message", "label": "💑 궁합 보기", "messageText": "궁합"}
-                    ]
-                }}
-            ]
+        body { 
+            background-color: #fdfbf7; /* 은은한 한지 느낌의 배경 */
+            color: #333; 
+            font-family: 'Nanum Myeongjo', serif; 
+            text-align: center; 
+            padding: 20px; 
+            margin: 0;
         }
-    }
-    async with httpx.AsyncClient() as client_http:
-        await client_http.post(callback_url, json=payload)
-
-# --- 사주 입력 폼 UI ---
-async def process_saju_input_form(callback_url: str, base_url: str):
-    img = Image.new('RGB', (800, 500), color=(20, 20, 40))
-    draw = ImageDraw.Draw(img)
-    draw_stars(draw, 800, 500)
-    try:
-        font_title = ImageFont.truetype("NanumGothic-Regular.ttf", 40)
-        font_text = ImageFont.truetype("NanumGothic-Regular.ttf", 30)
-        font_box = ImageFont.truetype("NanumGothic-Regular.ttf", 35)
-    except: font_title = font_text = font_box = None
-
-    draw.text((200, 50), "🔮 사주 정보 입력", font=font_title, fill=(255, 215, 0))
-    draw.text((150, 120), "아래 순서대로 채팅창에 입력해주세요.", font=font_text, fill=(200, 200, 200))
-    
-    draw.rectangle([100, 200, 700, 280], outline=(0, 255, 255), width=3)
-    draw.text((150, 225), "[ YYYY-MM-DD ]  [ HH:MM ]", font=font_box, fill=(0, 255, 255))
-    
-    draw.text((150, 320), "예시: 1995-05-05 15:30", font=font_text, fill=(150, 150, 150))
-    draw.text((150, 380), "입력 후 바로 엔터를 눌러주세요!", font=font_text, fill=(255, 105, 180))
-
-    filename = f"form_{uuid.uuid4().hex[:8]}.png"
-    img.save(f"/tmp/static/{filename}")
-
-    payload = {
-        "version": "2.0",
-        "template": {
-            "outputs": [
-                {"basicCard": {
-                    "title": "생년월일시 입력",
-                    "description": "박스 안의 형식대로 채팅창에 입력해주세요.",
-                    "thumbnail": {"imageUrl": f"{base_url}/static/{filename}", "fixedRatio": True, "width": 800, "height": 500}
-                }}
-            ]
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
         }
-    }
-    async with httpx.AsyncClient() as client_http:
-        await client_http.post(callback_url, json=payload)
-
-# --- 사주 결과 ---
-async def process_saju_result(callback_url: str, base_url: str, birth_date: str, birth_time: str):
-    year, month, day, hour_24, minute = parse_date(birth_date, birth_time)
-    saju_result = calculate_saju(year, month, day, hour_24, minute)
-    hanja_to_hangul = {"甲": "갑", "乙": "을", "丙": "병", "丁": "정", "戊": "무", "己": "기", "庚": "경", "辛": "신", "壬": "임", "癸": "계", "子": "자", "丑": "축", "寅": "인", "卯": "묘", "辰": "진", "巳": "사", "午": "오", "未": "미", "申": "신", "酉": "유", "戌": "술", "亥": "해"}
-    def conv_kr(t): return "".join([hanja_to_hangul.get(char, char) for char in t])
-    saju_text = f"{conv_kr(saju_result['year_pillar'])} {conv_kr(saju_result['month_pillar'])} {conv_kr(saju_result['day_pillar'])} {conv_kr(saju_result['hour_pillar'])}"
-
-    img = Image.new('RGB', (800, 600), color=(15, 15, 30))
-    draw = ImageDraw.Draw(img)
-    draw_stars(draw, 800, 600)
-    try:
-        font_title = ImageFont.truetype("NanumGothic-Regular.ttf", 40)
-        font_text = ImageFont.truetype("NanumGothic-Regular.ttf", 28)
-        font_saju = ImageFont.truetype("NanumGothic-Regular.ttf", 35)
-    except: font_title = font_text = font_saju = None 
-    
-    draw.text((50, 40), "🌌 사주 일력창", font=font_title, fill=(255, 215, 0)) 
-    draw.text((50, 100), f"입력: {birth_date} {birth_time}", font=font_text, fill=(200, 200, 200))
-    draw.text((50, 150), f"사주: {saju_text}", font=font_saju, fill=(0, 255, 255)) 
-    
-    draw.text((50, 230), "재물운", font=font_text, fill=(255, 255, 255))
-    draw.rectangle([150, 235, 700, 255], fill=(50, 50, 50))
-    draw.rectangle([150, 235, 150 + random.randint(200, 550), 255], fill=(255, 215, 0))
-    draw.text((50, 290), "애정운", font=font_text, fill=(255, 255, 255))
-    draw.rectangle([150, 295, 700, 315], fill=(50, 50, 50))
-    draw.rectangle([150, 295, 150 + random.randint(200, 550), 315], fill=(255, 105, 180))
-
-    filename = f"saju_{uuid.uuid4().hex[:8]}.png"
-    img.save(f"/tmp/static/{filename}")
-
-    payload = {
-        "version": "2.0",
-        "template": {
-            "outputs": [
-                {"basicCard": {
-                    "title": "사주 분석 완료",
-                    "description": "아래 메뉴를 눌러 상세 운세를 확인하세요.",
-                    "thumbnail": {"imageUrl": f"{base_url}/static/{filename}", "fixedRatio": True, "width": 800, "height": 600}
-                }}
-            ],
-            "quickReplies": [
-                {"action": "message", "label": "오늘의 운세", "messageText": f"오늘의 운세 {saju_text}"},
-                {"action": "message", "label": "이달의 운세", "messageText": f"이달의 운세 {saju_text}"},
-                {"action": "message", "label": "1년 운세", "messageText": f"1년 운세 {saju_text}"},
-                {"action": "message", "label": "5년 운세", "messageText": f"5년 운세 {saju_text}"},
-                {"action": "message", "label": "10년 운세", "messageText": f"10년 운세 {saju_text}"},
-                {"action": "message", "label": "평생 운세", "messageText": f"평생 운세 {saju_text}"}
-            ]
+        h1 { 
+            color: #b8860b; /* 황금빛 */
+            font-size: 28px;
+            margin-bottom: 10px;
+            letter-spacing: -1px;
         }
-    }
-    async with httpx.AsyncClient() as client_http:
-        await client_http.post(callback_url, json=payload)
+        .welcome { 
+            color: #8b4513; /* 동양적인 갈색 */
+            font-size: 15px;
+            margin-bottom: 30px;
+            font-weight: 700;
+        }
+        .form-group { 
+            background: #fff; 
+            border: 2px solid #d4af37; /* 황금색 테두리 */
+            border-radius: 10px; 
+            padding: 20px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        .input-row { 
+            display: flex; 
+            justify-content: center; 
+            align-items: center;
+            gap: 8px; 
+            margin-bottom: 15px;
+        }
+        input { 
+            padding: 10px; 
+            border: 1px solid #ccc; 
+            border-radius: 5px; 
+            background: #fafafa; 
+            color: #333; 
+            width: 50px; 
+            text-align: center; 
+            font-family: 'Nanum Myeongjo', serif;
+            font-size: 16px;
+        }
+        input::placeholder { color: #aaa; }
+        .radio-group { margin-bottom: 15px; font-size: 14px;}
+        .radio-group label { margin: 0 10px; cursor: pointer;}
+        
+        .menu-grid { 
+            display: grid; 
+            grid-template-columns: 1fr 1fr; 
+            gap: 10px; 
+            margin-top: 10px; 
+        }
+        button { 
+            background: #b8860b; /* 황금빛 버튼 */
+            color: #fff; 
+            border: none; 
+            padding: 15px; 
+            border-radius: 8px; 
+            font-family: 'Nanum Myeongjo', serif;
+            font-weight: 700; 
+            font-size: 15px;
+            cursor: pointer; 
+            transition: background 0.3s;
+        }
+        button:hover { background: #8b6508; }
+        
+        .result-box { 
+            background: #fff; 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin-top: 20px; 
+            text-align: left; 
+            border: 2px solid #b8860b; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .result-title { color: #b8860b; font-size: 20px; border-bottom: 2px dashed #d4af37; padding-bottom: 10px;}
+        .saju-text { font-size: 18px; font-weight: bold; color: #8b4513; margin: 15px 0; text-align: center; background: #fdf5e6; padding: 10px; border-radius: 5px;}
+        .ai-comment { line-height: 1.6; font-size: 15px;}
+        
+        .back-btn { display: inline-block; margin-top: 20px; color: #8b4513; text-decoration: none; font-weight: bold; border: 1px solid #8b4513; padding: 8px 15px; border-radius: 5px;}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔮 소윤의 사주타로</h1>
+        <div class="welcome">환영합니다.<br>당신의 삶의 좌표를 찾아드립니다.</div>
+
+        {% if not result %}
+        <form action="/saju/result" method="get">
+            <div class="form-group">
+                <div class="input-row">
+                    <input type="number" name="year" placeholder="년" required>
+                    <input type="number" name="month" placeholder="월" required>
+                    <input type="number" name="day" placeholder="일" required>
+                    <input type="number" name="hour" placeholder="시" required>
+                </div>
+                <div class="radio-group">
+                    <label><input type="radio" name="gender" value="남성" checked> 남성</label>
+                    <label><input type="radio" name="gender" value="여성"> 여성</label>
+                </div>
+                
+                <p style="color:#8b4513; font-size:14px; margin-bottom:10px;">▼ 원하시는 운세를 선택해주세요 ▼</p>
+                <div class="menu-grid">
+                    <button name="fortune_type" value="오늘의 운세">오늘의 운세</button>
+                    <button name="fortune_type" value="이달의 운세">이달의 운세</button>
+                    <button name="fortune_type" value="1년 운세">1년 운세</button>
+                    <button name="fortune_type" value="5년 운세">5년 운세</button>
+                    <button name="fortune_type" value="10년 운세">10년 운세</button>
+                    <button name="fortune_type" value="평생 운세">평생 운세</button>
+                </div>
+            </div>
+        </form>
+        {% endif %}
+
+        {% if result %}
+        <div class="result-box">
+            <div class="result-title">🔮 {{ result.type }} 분석 결과</div>
+            <div class="saju-text">{{ result.saju_text }}</div>
+            <div class="ai-comment">{{ result.ai_comment }}</div>
+            <div style="text-align:center;">
+                <a href="/saju" class="back-btn">← 다시 입력하기</a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
+"""
+
+# --- 1. 사주 메인 화면 (입력 폼) ---
+@app.get("/saju", response_class=HTMLResponse)
+async def saju_page():
+    # 초기 접속 시 result 변수 없이 템플릿 렌더링
+    html = HTML_TEMPLATE.replace("{% if not result %}", "").replace("{% endif %}", "").replace("{% if result %}", "<div style='display:none;'>").replace("{{ result.type }}", "").replace("{{ result.saju_text }}", "").replace("{{ result.ai_comment }}", "")
+    return HTMLResponse(content=html)
+
+# --- 2. 사주 결과 화면 (버튼 클릭 시) ---
+@app.get("/saju/result", response_class=HTMLResponse)
+async def saju_result(year: int, month: int, day: int, hour: int, gender: str, fortune_type: str):
+    try:
+        # 사주 계산
+        saju_result = calculate_saju(year, month, day, hour, 0)
+        hanja_to_hangul = {"甲": "갑", "乙": "을", "丙": "병", "丁": "정", "戊": "무", "己": "기", "庚": "경", "辛": "신", "壬": "임", "癸": "계", "子": "자", "丑": "축", "寅": "인", "卯": "묘", "辰": "진", "巳": "사", "午": "오", "未": "미", "申": "신", "酉": "유", "戌": "술", "亥": "해"}
+        def conv_kr(t): return "".join([hanja_to_hangul.get(char, char) for char in t])
+        saju_text = f"{conv_kr(saju_result['year_pillar'])} {conv_kr(saju_result['month_pillar'])} {conv_kr(saju_result['day_pillar'])} {conv_kr(saju_result['hour_pillar'])}"
+
+        # AI 프롬프트 작성
+        prompt = f"너는 친절하고 신비로운 분위기의 동양 명리학 사주 상담가야. {gender}의 사주팔자({saju_text})를 바탕으로 '{fortune_type}'에 대한 조언을 4문장 이내로 따뜻하고 긍정적으로 해줘. 한자보다는 한글로 풀어서 설명해줘."
+        ai_comment = get_ai_response(prompt)
+
+        # 결과 HTML 렌더링 (입력 폼 숨기고 결과창 보여주기)
+        html = HTML_TEMPLATE
+        # 입력 폼 영역을 숨김 처리 (CSS나 조건문으로 처리하는 것이 깔끔하지만, 간단하게 문자열 치환으로 처리)
+        html = html.replace("{% if not result %}", "<div style='display:none;'>").replace("{% endif %}", "</div>")
+        html = html.replace("{% if result %}", "").replace("{% endif %}", "")
+        
+        # 결과 데이터 주입
+        html = html.replace("{{ result.type }}", fortune_type)
+        html = html.replace("{{ result.saju_text }}", f"사주팔자: {saju_text}")
+        html = html.replace("{{ result.ai_comment }}", ai_comment)
+        
+        return HTMLResponse(content=html)
+    except Exception as e:
+        return HTMLResponse(content=f"<h2>오류가 발생했습니다.</h2><p>{str(e)}</p><a href='/saju'>돌아가기</a>")
