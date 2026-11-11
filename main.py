@@ -2,6 +2,7 @@ import os
 import httpx
 import asyncio
 import requests
+import re  # 💡 한글에서 숫자만 뽑아내기 위한 도구 추가
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -25,10 +26,9 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
     user_request = body.get("userRequest", {})
     callback_url = user_request.get("callbackUrl")
     
-    # 💡 [수정됨] 카카오가 추출한 파라미터(날짜)는 userRequest가 아니라 action 안에 들어있습니다!
     action = body.get("action", {})
     params = action.get("params", {})
-    birth_date = params.get("birthDate", "1990-01-01") # 날짜가 없으면 기본값 사용
+    birth_date = params.get("birthDate", "1990-01-01") 
     
     base_url = str(request.base_url).rstrip('/')
     
@@ -47,11 +47,19 @@ async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
 
 async def process_saju(callback_url: str, base_url: str, birth_date: str):
     try:
-        # 1. KASI API 호출을 위해 날짜 쪼개기 (YYYY-MM-DD -> YYYY, MM, DD)
+        # 1. KASI API 호출을 위해 날짜 쪼개기
         try:
-            year, month, day = birth_date.split('-')
+            # 💡 [수정] 정규식(re)을 사용해 문장에서 '숫자'만 모두 추출합니다.
+            # 예: "1995년 5월 5일" -> ['1995', '5', '5']
+            numbers = re.findall(r'\d+', birth_date)
+            if len(numbers) >= 3:
+                year = numbers[0]
+                month = numbers[1].zfill(2) # 5 -> 05 로 만들어줌
+                day = numbers[2].zfill(2)   # 5 -> 05 로 만들어줌
+            else:
+                year, month, day = "1990", "01", "01" # 형식이 이상하면 기본값
         except:
-            year, month, day = "1990", "01", "01" # 형식이 잘못된 경우 기본값
+            year, month, day = "1990", "01", "01"
 
         api_key = os.getenv("KASI_API_KEY")
         url = "http://apis.data.go.kr/B090041/openapi/service/LrsrCldInfoService/getLunCalInfo"
@@ -83,11 +91,11 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str):
             font_title = font_text = None 
 
         draw.text((50, 50), "천문학 사주 분석 결과", font=font_title, fill=(255, 215, 0)) 
-        draw.text((50, 150), f"양력 입력: {birth_date}", font=font_text, fill=(200, 200, 200))
+        draw.text((50, 150), f"양력 입력: {year}년 {month}월 {day}일", font=font_text, fill=(200, 200, 200))
         draw.text((50, 200), f"음력 변환: {lun_date}", font=font_text, fill=(255, 255, 255))
         draw.text((50, 250), f"일진(기운): {iljin}", font=font_text, fill=(255, 255, 255))
         
-        # 게이지 바 그리기 (예시)
+        # 게이지 바 그리기
         draw.rectangle([50, 320, 750, 350], fill=(100, 100, 100))
         draw.rectangle([50, 320, 550, 350], fill=(0, 255, 127))
 
@@ -104,7 +112,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str):
                 "outputs": [
                     {
                         "basicCard": {
-                            "title": f"{birth_date} 천문학 사주",
+                            "title": f"{year}년 {month}월 {day}일 천문학 사주",
                             "description": "KASI 데이터를 바탕으로 분석한 결과입니다.",
                             "thumbnail": {
                                 "imageUrl": image_url,
@@ -127,4 +135,3 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str):
             
     except Exception as e:
         print(f"에러 발생: {e}")
-        
