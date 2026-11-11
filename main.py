@@ -10,13 +10,13 @@ import uuid
 
 app = FastAPI()
 
-# 이미지를 저장할 static 폴더 생성 및 설정
-os.makedirs("static", exist_ok=True)
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# 💡 Render 환경에서는 읽기 전용이므로, 쓰기가 가능한 /tmp 디렉토리를 사용합니다.
+os.makedirs("/tmp/static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
 @app.get("/")
 async def root():
-    return {"message": "소윤의 사주타로 서버가 정상 작동 중입니다!"}
+    return {"message": "소윤의 천문사주 서버가 정상 작동 중입니다!"}
 
 @app.post("/kakao/webhook")
 async def kakao_webhook(request: Request, background_tasks: BackgroundTasks):
@@ -66,7 +66,7 @@ async def process_saju(callback_url: str, base_url: str):
             font_title = font_text = None # 폰트가 없으면 기본 폰트 사용 (한글 깨짐)
 
         # 글씨 쓰기
-        draw.text((50, 50), "🌌 명리학 사주 분석 결과", font=font_title, fill=(255, 215, 0)) # 노란색 제목
+        draw.text((50, 50), "🌌 천문학 사주 분석 결과", font=font_title, fill=(255, 215, 0)) # 노란색 제목
         draw.text((50, 150), f"🌙 음력 날짜: {lun_date}", font=font_text, fill=(255, 255, 255))
         draw.text((50, 220), f"✨ 일진(기운): {iljin}", font=font_text, fill=(255, 255, 255))
         
@@ -76,7 +76,7 @@ async def process_saju(callback_url: str, base_url: str):
 
         # 3. 이미지 저장 및 URL 만들기
         filename = f"dashboard_{uuid.uuid4().hex[:8]}.png"
-        filepath = f"static/{filename}"
+        filepath = f"/tmp/static/{filename}"
         img.save(filepath)
         image_url = f"{base_url}/static/{filename}"
 
@@ -87,7 +87,7 @@ async def process_saju(callback_url: str, base_url: str):
                 "outputs": [
                     {
                         "basicCard": {
-                            "title": "당신의 명리학 사주",
+                            "title": "당신의 천문학 사주",
                             "description": "KASI 데이터를 바탕으로 분석한 결과입니다.",
                             "thumbnail": {
                                 "imageUrl": image_url,
