@@ -10,14 +10,13 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont
 import uuid
 from sajupy import calculate_saju
-from openai import OpenAI # 💡 AI 사주 풀이용
+from openai import OpenAI
 
 app = FastAPI()
 
 os.makedirs("/tmp/static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
-# OpenAI 클라이언트 초기화
 client_ai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 @app.get("/")
@@ -91,7 +90,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         
         saju_text = f"{conv_kr(saju_result['year_pillar'])} {conv_kr(saju_result['month_pillar'])} {conv_kr(saju_result['day_pillar'])} {conv_kr(saju_result['hour_pillar'])}"
 
-        # 4. 💡 AI 사주 풀이 (GPT-4o-mini)
+        # 4. AI 사주 풀이 (GPT-4o-mini)
         ai_comment = "사주 분석 결과를 불러오지 못했습니다."
         try:
             prompt = f"너는 친절하고 신비로운 분위기의 사주 상담가야. 다음 사주팔자를 바탕으로 사용자에게 3문장 이내로 따뜻하고 긍정적인 조언을 해줘. (사주팔자: {saju_text})"
@@ -101,14 +100,14 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
                 max_tokens=150
             )
             ai_comment = ai_response.choices[0].message.content
+            print("AI 풀이 성공:", ai_comment)
         except Exception as e:
             print(f"AI 풀이 에러: {e}")
 
-        # 5. 💡 UI 고도화: 별빛 배경 및 RPG 게이지 3개 그리기
-        img = Image.new('RGB', (800, 600), color=(15, 15, 30)) # 더 어두운 우주 배경
+        # 5. UI 고도화: 별빛 배경 및 RPG 게이지 3개 그리기
+        img = Image.new('RGB', (800, 600), color=(15, 15, 30))
         draw = ImageDraw.Draw(img)
         
-        # 별빛 뿌리기 (랜덤 점 50개)
         for _ in range(50):
             x, y = random.randint(0, 800), random.randint(0, 600)
             r = random.randint(1, 2)
@@ -126,27 +125,26 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         draw.text((50, 140), f"음력: {lun_date}", font=font_text, fill=(200, 200, 200))
         draw.text((50, 200), f"사주: {saju_text}", font=font_saju, fill=(0, 255, 255)) 
         
-        # RPG 게이지 바 (랜덤 수치로 시각화)
         draw.text((50, 280), "재물운", font=font_text, fill=(255, 255, 255))
         draw.rectangle([150, 285, 700, 305], fill=(50, 50, 50))
-        draw.rectangle([150, 285, 150 + random.randint(200, 550), 305], fill=(255, 215, 0)) # 노란색
+        draw.rectangle([150, 285, 150 + random.randint(200, 550), 305], fill=(255, 215, 0))
 
         draw.text((50, 340), "애정운", font=font_text, fill=(255, 255, 255))
         draw.rectangle([150, 345, 700, 365], fill=(50, 50, 50))
-        draw.rectangle([150, 345, 150 + random.randint(200, 550), 365], fill=(255, 105, 180)) # 핑크색
+        draw.rectangle([150, 345, 150 + random.randint(200, 550), 365], fill=(255, 105, 180))
 
         draw.text((50, 400), "건강운", font=font_text, fill=(255, 255, 255))
         draw.rectangle([150, 405, 700, 425], fill=(50, 50, 50))
-        draw.rectangle([150, 405, 150 + random.randint(200, 550), 425], fill=(0, 255, 127)) # 초록색
+        draw.rectangle([150, 405, 150 + random.randint(200, 550), 425], fill=(0, 255, 127))
 
-        # 6. 이미지 저장 및 카카오 전송
+        # 6. 이미지 저장 및 URL 만들기
         filename = f"dashboard_{uuid.uuid4().hex[:8]}.png"
         filepath = f"/tmp/static/{filename}"
         img.save(filepath)
         image_url = f"{base_url}/static/{filename}"
 
-        # 카드 1: 이미지
-        payload_image = {
+        # 💡 7. 카카오톡으로 보낼 카드들을 하나로 묶어서 전송 (핵심 수정!)
+        payload = {
             "version": "2.0",
             "template": {
                 "outputs": [
@@ -156,16 +154,7 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
                             "description": "천체 궤적과 사주팔자를 분석한 결과입니다.",
                             "thumbnail": {"imageUrl": image_url, "fixedRatio": True, "width": 800, "height": 600}
                         }
-                    }
-                ]
-            }
-        }
-        
-        # 카드 2: AI 텍스트 풀이
-        payload_text = {
-            "version": "2.0",
-            "template": {
-                "outputs": [
+                    },
                     {
                         "textCard": {
                             "title": "🔮 AI 사주 마스터의 조언",
@@ -178,12 +167,12 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         }
         
         async with httpx.AsyncClient() as client:
-            # 이미지 먼저 보내고
-            await client.post(callback_url, json=payload_image)
-            await asyncio.sleep(1) # 살짝 텀을 줌
-            # 텍스트 풀이 전송
-            await client.post(callback_url, json=payload_text)
-            print("이미지 및 AI 풀이 전송 완료!")
+            res = await client.post(callback_url, json=payload)
+            print(f"카카오 응답 코드: {res.status_code}")
+            if res.status_code == 200:
+                print("이미지 및 AI 풀이 전송 완료!")
+            else:
+                print(f"전송 실패: {res.text}")
             
     except Exception as e:
         print(f"에러 발생: {e}")
