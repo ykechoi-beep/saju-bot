@@ -10,29 +10,29 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont
 import uuid
 from sajupy import calculate_saju
-from google import genai  # 💡 최신 구글 라이브러리로 변경
+from google import genai
 
 app = FastAPI()
 
 os.makedirs("/tmp/static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
-# 💡 최신 SDK 클라이언트 초기화
+# 최신 SDK 클라이언트 초기화
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
-# 💡 최신 SDK에 맞춘 AI 호출 함수 (최신 모델명 사용)
+# 💡 [수정] 어떤 에러가 났는지 수집해서 채팅창에 보여주는 함수
 def get_ai_comment_with_fallback(prompt: str) -> str:
-    # 최신 SDK에서 지원하는 모델 목록 (최신순)
     model_candidates = [
-        'gemini-2.5-flash',       # ⭐ 최우선 모델
-        'gemini-2.0-flash',       # 1차 백업
-        'gemini-1.5-flash'        # 2차 백업
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-1.5-flash'
     ]
+    
+    errors = [] # 에러 내용을 담을 리스트
     
     for model_name in model_candidates:
         try:
             print(f"AI 모델 시도 중: {model_name}")
-            # 최신 SDK 호출 방식
             response = client.models.generate_content(
                 model=model_name,
                 contents=prompt
@@ -41,10 +41,14 @@ def get_ai_comment_with_fallback(prompt: str) -> str:
                 print(f"✅ AI 모델 성공: {model_name}")
                 return response.text
         except Exception as e:
-            print(f"❌ {model_name} 실패: {e}")
+            # 에러 메시지가 너무 길면 자르기
+            error_msg = f"[{model_name} 실패: {str(e)[:60]}...]" 
+            print(f"❌ {error_msg}")
+            errors.append(error_msg)
             continue
             
-    return "현재 AI 모델을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요."
+    # 모든 모델이 실패했을 때, 어떤 에러들이 있었는지 반환
+    return f"⚠️ AI 모델 호출 실패:\n" + "\n".join(errors)
 
 @app.get("/")
 async def root():
