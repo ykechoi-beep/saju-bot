@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageDraw, ImageFont
 import uuid
 from sajupy import calculate_saju
-import google.generativeai as genai  # 💡 구글 Gemini 라이브러리 추가
+import google.generativeai as genai
 
 app = FastAPI()
 
@@ -19,8 +19,32 @@ app.mount("/static", StaticFiles(directory="/tmp/static"), name="static")
 
 # 💡 구글 Gemini API 설정
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-# 무료로 사용하기 좋은 Gemini 2.0 Flash 모델 사용
-gemini_model = genai.GenerativeModel('gemini-2.0-flash')
+
+# 💡 [추가] 여러 모델을 순차적으로 시도하는 폴백(Fallback) 함수
+def get_ai_comment_with_fallback(prompt: str) -> str:
+    # 시도할 모델 목록 (구글에서 최신 모델을 권장하므로 최신순으로 배치)
+    model_candidates = [
+        'gemini-3.8-flash',
+        'gemini-3.5-flash',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash',
+        'gemini-1.5-flash-latest'
+    ]
+    
+    for model_name in model_candidates:
+        try:
+            print(f"AI 모델 시도 중: {model_name}")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt)
+            if response.text:
+                print(f"✅ AI 모델 성공: {model_name}")
+                return response.text
+        except Exception as e:
+            print(f"❌ {model_name} 실패: {e}")
+            continue # 실패하면 다음 모델로 넘어감
+            
+    # 모든 모델이 실패했을 때
+    return "현재 AI 모델을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요."
 
 @app.get("/")
 async def root():
@@ -93,17 +117,16 @@ async def process_saju(callback_url: str, base_url: str, birth_date: str, birth_
         
         saju_text = f"{conv_kr(saju_result['year_pillar'])} {conv_kr(saju_result['month_pillar'])} {conv_kr(saju_result['day_pillar'])} {conv_kr(saju_result['hour_pillar'])}"
 
-        # 4. 💡 구글 Gemini AI 사주 풀이
+        # 4. 💡 구글 Gemini AI 사주 풀이 (폴백 함수 적용)
         ai_comment = "사주 분석 결과를 불러오지 못했습니다."
         try:
             prompt = f"너는 친절하고 신비로운 분위기의 사주 상담가야. 다음 사주팔자를 바탕으로 사용자에게 3문장 이내로 따뜻하고 긍정적인 조언을 해줘. (사주팔자: {saju_text})"
             
-            # Gemini API 호출 (동기 방식)
-            ai_response = gemini_model.generate_content(prompt)
-            ai_comment = ai_response.text
-            print("AI 풀이 성공:", ai_comment)
+            # 위에서 만든 다중 모델 폴백 함수를 호출합니다.
+            ai_comment = get_ai_comment_with_fallback(prompt)
+            
         except Exception as e:
-            print(f"AI 풀이 에러: {e}")
+            print(f"AI 풀이 최종 에러: {e}")
 
         # 5. UI 고도화: 별빛 배경 및 RPG 게이지 3개 그리기
         img = Image.new('RGB', (800, 600), color=(15, 15, 30))
