@@ -24,6 +24,7 @@ def get_ai_response(prompt: str) -> str:
                     break
     return "현재 우주의 기운이 혼잡하여 분석이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
 
+# 💡 입력 폼 화면 (변경된 로딩 문구 적용)
 HTML_FORM = """
 <!DOCTYPE html>
 <html lang="ko">
@@ -44,15 +45,45 @@ HTML_FORM = """
         .menu-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
         button { background: #b8860b; color: #fff; border: none; padding: 15px; border-radius: 8px; font-weight: 700; font-size: 15px; cursor: pointer; }
         button:active { background: #5c4000; }
+
+        /* 💡 로딩 오버레이 스타일 */
+        #loading-overlay {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(244, 232, 211, 0.95); z-index: 9999;
+            flex-direction: column; justify-content: center; align-items: center;
+        }
+        .spinner {
+            border: 6px solid #e0cda9; border-top: 6px solid #b8860b; border-radius: 50%;
+            width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* 💡 변경된 로딩 문구 디자인 */
+        .loading-text { 
+            color: #8b4513; 
+            font-size: 18px; 
+            font-weight: bold; 
+            padding: 0 20px;
+            line-height: 1.5;
+            word-break: keep-all;
+        }
+        .loading-subtext { color: #b8860b; font-size: 14px; margin-top: 15px; }
     </style>
 </head>
 <body>
+    <!-- 💡 로딩 화면 (처음엔 숨김) -->
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div class="loading-text">당신의 고민과 타고난 운명의 흐름을 살펴보고 있습니다...</div>
+        <div class="loading-subtext">사주 명식을 분석 중입니다 (약 5~10초 소요)</div>
+    </div>
+
     <div class="container">
         <h1>🔮 소윤의 사주타로</h1>
         <div class="welcome">환영합니다.<br>당신의 삶의 좌표를 찾아드립니다.</div>
         
-        <!-- 💡 POST를 GET으로 변경! 카카오 웹뷰에서 작동합니다. -->
-        <form action="/saju/result" method="GET" class="form-group">
+        <!-- 💡 GET 방식 전송 및 로딩 화면 호출 -->
+        <form action="/saju/result" method="GET" class="form-group" onsubmit="showLoading()">
             <div class="input-row">
                 <input type="number" name="year" placeholder="년" required>
                 <input type="number" name="month" placeholder="월" required>
@@ -79,6 +110,12 @@ HTML_FORM = """
             </div>
         </form>
     </div>
+
+    <script>
+        function showLoading() {
+            document.getElementById('loading-overlay').style.display = 'flex';
+        }
+    </script>
 </body>
 </html>
 """
@@ -111,12 +148,19 @@ HTML_RESULT_TEMPLATE = """
 </html>
 """
 
-@app.get("/saju", response_class=HTMLResponse)
-async def saju_page():
-    return HTMLResponse(content=HTML_FORM)
+# 💡 캐시 방지 헤더를 추가하여 재입력 시 반응 없음 문제 해결
+def get_no_cache_response(html_content: str):
+    response = HTMLResponse(content=html_content)
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
-# 💡 POST 방식을 GET 방식으로 변경하여 카카오 웹뷰 차단 우회
-@app.get("/saju/result", response_class=HTMLResponse)
+@app.get("/saju")
+async def saju_page():
+    return get_no_cache_response(HTML_FORM)
+
+@app.get("/saju/result")
 async def saju_result(year: int, month: int, day: int, hour: int, calendar: str, gender: str, fortune_type: str):
     try:
         fortune_map = {"today": "오늘의 운세", "month": "이달의 운세", "year1": "1년 운세", "year5": "5년 운세", "year10": "10년 운세", "life": "평생 운세"}
@@ -135,10 +179,11 @@ async def saju_result(year: int, month: int, day: int, hour: int, calendar: str,
             <div class="result-title">🔮 {fortune_type_kr} 분석 결과</div>
             <div class="saju-text">사주팔자: {saju_text}</div>
             <div class="ai-comment">{ai_comment}</div>
-            <a href="/saju" class="back-btn">← 다시 입력하기</a>
+            <!-- 💡 캐시 방지를 위해 다시 입력하기 링크에 파라미터를 붙임 -->
+            <a href="/saju?reset=true" class="back-btn">← 다시 입력하기</a>
         </div>
         """
-        return HTMLResponse(content=HTML_RESULT_TEMPLATE.replace("{result_content}", result_html))
+        return get_no_cache_response(HTML_RESULT_TEMPLATE.replace("{result_content}", result_html))
         
     except Exception as e:
         traceback.print_exc()
@@ -146,7 +191,7 @@ async def saju_result(year: int, month: int, day: int, hour: int, calendar: str,
         <div class="error-box">
             <h3>분석 중 오류가 발생했습니다.</h3>
             <p>원인: {str(e)}</p>
-            <a href="/saju" class="back-btn" style="color:red; border-color:red;">← 돌아가기</a>
+            <a href="/saju?reset=true" class="back-btn" style="color:red; border-color:red;">← 돌아가기</a>
         </div>
         """
-        return HTMLResponse(content=HTML_RESULT_TEMPLATE.replace("{result_content}", error_html))
+        return get_no_cache_response(HTML_RESULT_TEMPLATE.replace("{result_content}", error_html))
