@@ -101,7 +101,7 @@ HTML_SAJU_RESULT = f"""
     .back-btn {{ display: block; margin-top: 25px; color: #8b4513; text-decoration: none; font-weight: bold; border: 1px solid #8b4513; padding: 12px; border-radius: 8px; text-align: center; background: #fff;}}
 </style></head><body>
     {LOADING_SCRIPT}
-    <div class="container"><h1>🔮 분석 결과</h1>{{result_content}}</div>
+    <div class="container"><h1>🔮 분석 결과</h1>{result_content}</div>
 </body></html>
 """
 
@@ -118,9 +118,9 @@ async def saju_result(year: int, month: int, day: int, hour: int, calendar: str,
         prompt = f"너는 친절하고 신비로운 분위기의 동양 명리학 사주 상담가야. {gender}의 사주팔자({saju_text})를 바탕으로 '{fortune_type_kr}'에 대한 조언을 4문장 이내로 따뜻하고 긍정적으로 해줘. 참고로 입력된 생년월일시는 '{calendar}' 기준이야."
         ai_comment = get_ai_response(prompt)
         result_html = f"""<div class="result-box"><div class="result-title">🔮 {fortune_type_kr} 분석 결과</div><div class="saju-text">사주팔자: {saju_text}</div><div class="ai-comment">{ai_comment}</div><a href="/saju?v=1" class="back-btn">← 다시 입력하기</a></div>"""
-        return get_no_cache_response(HTML_SAJU_RESULT.replace("{{result_content}}", result_html))
+        return get_no_cache_response(HTML_SAJU_RESULT.replace("{result_content}", result_html))
     except Exception as e:
-        return get_no_cache_response(HTML_SAJU_RESULT.replace("{{result_content}}", f"<div class='result-box'>오류: {str(e)}</div>"))
+        return get_no_cache_response(HTML_SAJU_RESULT.replace("{result_content}", f"<div class='result-box'>오류: {str(e)}</div>"))
 
 # ==========================================
 # 2. 타로 (Tarot) 코드 - 3단계 프로세스
@@ -178,7 +178,7 @@ HTML_TAROT_CARDS = f"""
         <h1>🃏 신비의 타로</h1>
         <div class="welcome">직관적으로 끌리는 카드를<br>하나 선택하세요.</div>
         <form action="/tarot/result" method="GET" onsubmit="showLoading()">
-            <input type="hidden" name="category" value="{{category}}">
+            <input type="hidden" name="category" value="{category}">
             <div class="card-grid">
                 <button type="submit" name="card" value="1" class="tarot-card"><div class="card-icon">🌙</div><div class="card-text">1번</div></button>
                 <button type="submit" name="card" value="2" class="tarot-card"><div class="card-icon">⭐</div><div class="card-text">2번</div></button>
@@ -202,7 +202,7 @@ HTML_TAROT_RESULT = f"""
     .back-btn {{ display: block; margin-top: 25px; color: #e6c200; text-decoration: none; font-weight: bold; border: 1px solid #e6c200; padding: 12px; border-radius: 8px; text-align: center; background: transparent;}}
 </style></head><body>
     {LOADING_SCRIPT}
-    <div class="container"><h1>🃏 타로 리딩 결과</h1>{{result_content}}</div>
+    <div class="container"><h1>🃏 타로 리딩 결과</h1>{result_content}</div>
 </body></html>
 """
 
@@ -211,8 +211,7 @@ async def tarot_page(): return get_no_cache_response(HTML_TAROT_CATEGORY)
 
 @app.get("/tarot/cards")
 async def tarot_cards(category: str):
-    # HTML_TAROT_CARDS 템플릿의 {{category}} 변수를 실제 값으로 치환
-    html = HTML_TAROT_CARDS.replace("{{category}}", category)
+    html = HTML_TAROT_CARDS.replace("{category}", category)
     return get_no_cache_response(html)
 
 @app.get("/tarot/result")
@@ -220,7 +219,6 @@ async def tarot_result(category: str, card: int):
     try:
         category_map = {"love": "연애/관계", "career": "직업/진로", "wealth": "재물/금전", "health": "건강/마음"}
         category_kr = category_map.get(category, "종합 운세")
-        
         card_map = {1: "달 (The Moon)", 2: "별 (The Star)", 3: "태양 (The Sun)"}
         selected_card = card_map.get(card, "운명의 수레바퀴")
         
@@ -228,12 +226,12 @@ async def tarot_result(category: str, card: int):
         ai_comment = get_ai_response(prompt)
         
         result_html = f"""<div class="result-box"><div class="result-title">🔮 {category_kr} 타로 리딩</div><div class="card-name">✨ {selected_card} ✨</div><div class="ai-comment">{ai_comment}</div><a href="/tarot?v=1" class="back-btn">← 다시 뽑기</a></div>"""
-        return get_no_cache_response(HTML_TAROT_RESULT.replace("{{result_content}}", result_html))
+        return get_no_cache_response(HTML_TAROT_RESULT.replace("{result_content}", result_html))
     except Exception as e:
-         return get_no_cache_response(HTML_TAROT_RESULT.replace("{{result_content}}", f"<div class='result-box'>오류: {str(e)}</div>"))
+         return get_no_cache_response(HTML_TAROT_RESULT.replace("{result_content}", f"<div class='result-box'>오류: {str(e)}</div>"))
 
 # ==========================================
-# 3. 궁합 (Compatibility) 코드
+# 3. 궁합 (Compatibility) 코드 (양력/음력 추가)
 # ==========================================
 HTML_COMPAT_FORM = f"""
 <!DOCTYPE html><html lang="ko"><head>
@@ -247,7 +245,8 @@ HTML_COMPAT_FORM = f"""
     .input-row {{ display: flex; justify-content: center; gap: 6px; margin-bottom: 10px; }}
     input[type="number"] {{ padding: 15px 5px; border: 2px solid #d4af37; border-radius: 10px; background: #fafafa; width: 23%; max-width: 85px; height: 55px; text-align: center; font-size: 20px; font-weight: bold; }}
     input::placeholder {{ color: #aaa; font-weight: normal;}}
-    button {{ background: #b8860b; color: #fff; border: none; padding: 18px; border-radius: 8px; font-weight: 700; font-size: 18px; cursor: pointer; width: 100%; }}
+    .radio-group {{ margin-bottom: 10px; font-size: 14px; display: flex; justify-content: center; gap: 15px; }}
+    button {{ background: #b8860b; color: #fff; border: none; padding: 18px; border-radius: 8px; font-weight: 700; font-size: 18px; cursor: pointer; width: 100%; margin-top: 10px;}}
     button:active {{ background: #5c4000; }}
     #loading-overlay {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(244, 232, 211, 0.95); z-index: 9999; flex-direction: column; justify-content: center; align-items: center; }}
     .spinner {{ border: 6px solid #e0cda9; border-top: 6px solid #b8860b; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; margin-bottom: 20px; }}
@@ -261,12 +260,14 @@ HTML_COMPAT_FORM = f"""
         <div class="welcome">두 사람의 케미스트리를 확인해보세요.</div>
         <form action="/compat/result" method="GET" onsubmit="showLoading()">
             <div class="form-group">
-                <div class="person-title">👨 남성 (양력 기준)</div>
+                <div class="person-title">👨 남성</div>
                 <div class="input-row"><input type="number" name="m_year" placeholder="년" required><input type="number" name="m_month" placeholder="월" required><input type="number" name="m_day" placeholder="일" required><input type="number" name="m_hour" placeholder="시" required></div>
+                <div class="radio-group"><label><input type="radio" name="m_calendar" value="양력" checked> 양력</label><label><input type="radio" name="m_calendar" value="음력"> 음력</label></div>
             </div>
             <div class="form-group">
-                <div class="person-title">👩 여성 (양력 기준)</div>
+                <div class="person-title">👩 여성</div>
                 <div class="input-row"><input type="number" name="f_year" placeholder="년" required><input type="number" name="f_month" placeholder="월" required><input type="number" name="f_day" placeholder="일" required><input type="number" name="f_hour" placeholder="시" required></div>
+                <div class="radio-group"><label><input type="radio" name="f_calendar" value="양력" checked> 양력</label><label><input type="radio" name="f_calendar" value="음력"> 음력</label></div>
             </div>
             <button type="submit">궁합 보기</button>
         </form>
@@ -287,7 +288,7 @@ HTML_COMPAT_RESULT = f"""
     .back-btn {{ display: block; margin-top: 25px; color: #8b4513; text-decoration: none; font-weight: bold; border: 1px solid #8b4513; padding: 12px; border-radius: 8px; text-align: center; background: #fff;}}
 </style></head><body>
     {LOADING_SCRIPT}
-    <div class="container"><h1>💑 궁합 분석 결과</h1>{{result_content}}</div>
+    <div class="container"><h1>💑 궁합 분석 결과</h1>{result_content}</div>
 </body></html>
 """
 
@@ -295,15 +296,18 @@ HTML_COMPAT_RESULT = f"""
 async def compat_page(): return get_no_cache_response(HTML_COMPAT_FORM)
 
 @app.get("/compat/result")
-async def compat_result(m_year: int, m_month: int, m_day: int, m_hour: int, f_year: int, f_month: int, f_day: int, f_hour: int):
+async def compat_result(m_year: int, m_month: int, m_day: int, m_hour: int, m_calendar: str, f_year: int, f_month: int, f_day: int, f_hour: int, f_calendar: str):
     try:
         m_saju_res = calculate_saju(m_year, m_month, m_day, m_hour, 0)
         m_saju = f"{hanja_to_kr(m_saju_res['year_pillar'])} {hanja_to_kr(m_saju_res['month_pillar'])} {hanja_to_kr(m_saju_res['day_pillar'])} {hanja_to_kr(m_saju_res['hour_pillar'])}"
+        
         f_saju_res = calculate_saju(f_year, f_month, f_day, f_hour, 0)
         f_saju = f"{hanja_to_kr(f_saju_res['year_pillar'])} {hanja_to_kr(f_saju_res['month_pillar'])} {hanja_to_kr(f_saju_res['day_pillar'])} {hanja_to_kr(f_saju_res['hour_pillar'])}"
-        prompt = f"너는 신비로운 궁합 상담가야. 남자 사주({m_saju})와 여자 사주({f_saju})를 바탕으로 두 사람의 케미스트리와 연애/결혼 운을 5문장 이내로 따뜻하고 긍정적으로 분석해줘."
+        
+        prompt = f"너는 신비로운 궁합 상담가야. 남자 사주({m_saju}, {m_calendar} 기준)와 여자 사주({f_saju}, {f_calendar} 기준)를 바탕으로 두 사람의 케미스트리와 연애/결혼 운을 5문장 이내로 따뜻하고 긍정적으로 분석해줘."
         ai_comment = get_ai_response(prompt)
+        
         result_html = f"""<div class="result-box"><div class="result-title">케미스트리 분석</div><div class="saju-compare"><div>👨 남성<br>{m_saju}</div><div>💕</div><div>👩 여성<br>{f_saju}</div></div><div class="ai-comment">{ai_comment}</div><a href="/compat?v=1" class="back-btn">← 다시 입력하기</a></div>"""
-        return get_no_cache_response(HTML_COMPAT_RESULT.replace("{{result_content}}", result_html))
+        return get_no_cache_response(HTML_COMPAT_RESULT.replace("{result_content}", result_html))
     except Exception as e:
-         return get_no_cache_response(HTML_COMPAT_RESULT.replace("{{result_content}}", f"<div class='result-box'>오류: {str(e)}</div>"))
+         return get_no_cache_response(HTML_COMPAT_RESULT.replace("{result_content}", f"<div class='result-box'>오류: {str(e)}</div>"))
