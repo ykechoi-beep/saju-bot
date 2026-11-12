@@ -5,42 +5,34 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from sajupy import calculate_saju
 from google import genai
-from google.genai import types  # 💡 타임아웃 설정을 위해 추가
 
 app = FastAPI()
 
 # 💡 전화번호를 여기서 수정하세요!
-CONTACT_PHONE = "010-8759-0362" 
+CONTACT_PHONE = "010-1234-5678" 
 
-# 💡 [수정] AI 클라이언트 초기화 시 10초 타임아웃 강제 적용 (무한 대기 방지)
+# 💡 안전한 AI 클라이언트 초기화 (에러가 나도 서버가 죽지 않게 방어)
 try:
-    client = genai.Client(
-        api_key=os.getenv("GEMINI_API_KEY"),
-        http_options=types.HttpOptions(timeout=10000) # 10,000ms = 10초
-    )
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 except Exception as e:
     print(f"AI 클라이언트 초기화 실패: {e}")
     client = None
 
-# 💡 [수정] 대기 시간(Sleep)을 없애고 빠르게 실패/전환하도록 최적화
 def get_ai_response(prompt: str) -> str:
     if not client:
         return "현재 AI 서버 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요."
     
-    model_candidates = ['gemini-3.8-flash', 'gemini-1.5-flash']
-    
+    model_candidates = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-1.5-flash']
     for model_name in model_candidates:
-        try:
-            response = client.models.generate_content(
-                model=model_name, 
-                contents=prompt
-            )
-            if response.text: 
-                return response.text
-        except Exception as e:
-            print(f"AI 에러 ({model_name}): {e}")
-            continue # 에러 시 즉시 다음 모델로 넘어감
-            
+        for attempt in range(3):
+            try:
+                response = client.models.generate_content(model=model_name, contents=prompt)
+                if response.text: return response.text
+            except Exception as e:
+                if "503" in str(e) or "429" in str(e) or "UNAVAILABLE" in str(e):
+                    time.sleep(1)
+                    continue
+                else: break
     return "현재 우주의 기운이 혼잡하여 분석이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
 
 def get_no_cache_response(html_content: str):
@@ -63,7 +55,7 @@ LOADING_SCRIPT = """
     </script>
 """
 
-# 💡 [핵심] Render의 Health Check 및 UptimeRobot 통과를 위한 루트 경로
+# 💡 [핵심] Render의 Health Check를 통과하기 위한 루트 경로 추가
 @app.get("/")
 async def root():
     return {"message": "소윤의 사주타로 서버가 정상 작동 중입니다."}
@@ -97,7 +89,7 @@ HTML_SAJU_FORM = """
     .loading-subtext { color: #8b4513; font-size: 15px; margin-top: 15px; font-weight: bold; }
 </style></head><body>
     __LOADING_SCRIPT__
-    <div id="loading-overlay"><div class="spinner"></div><div class="loading-text">당신의 고민과 타고난 운명의 흐름을 살펴보고 있습니다...</div><div class="loading-subtext">사주 명식을 분석 중입니다 (약 3~5초 소요)</div></div>
+    <div id="loading-overlay"><div class="spinner"></div><div class="loading-text">당신의 고민과 타고난 운명의 흐름을 살펴보고 있습니다...</div><div class="loading-subtext">사주 명식을 분석 중입니다 (약 5~10초 소요)</div></div>
     <div class="container">
         <h1>🔮 소윤의 사주타로</h1><div class="welcome">환영합니다.<br>당신의 삶의 좌표를 찾아드립니다.</div>
         <form action="/saju/result" method="GET" class="form-group" onsubmit="showLoading()">
@@ -149,7 +141,7 @@ async def saju_result(year: int, month: int, day: int, hour: int, calendar: str,
         saju_text = f"{hanja_to_kr(saju_result['year_pillar'])} {hanja_to_kr(saju_result['month_pillar'])} {hanja_to_kr(saju_result['day_pillar'])} {hanja_to_kr(saju_result['hour_pillar'])}"
         prompt = f"너는 친절하고 신비로운 분위기의 동양 명리학 사주 상담가야. {gender}의 사주팔자({saju_text})를 바탕으로 '{fortune_type_kr}'에 대한 조언을 4문장 이내로 따뜻하고 긍정적으로 해줘. 참고로 입력된 생년월일시는 '{calendar}' 기준이야."
         ai_comment = get_ai_response(prompt)
-        result_html = f"""<div class="result-box"><div class="result-title">🔮 {fortune_type_kr} 분석 결과</div><div class="saju-text">사주팔자: {saju_text}</div><div class="ai-comment">{ai_comment}</div><a href="/saju?v=6" class="back-btn">← 다시 입력하기</a></div>"""
+        result_html = f"""<div class="result-box"><div class="result-title">🔮 {fortune_type_kr} 분석 결과</div><div class="saju-text">사주팔자: {saju_text}</div><div class="ai-comment">{ai_comment}</div><a href="/saju?v=1" class="back-btn">← 다시 입력하기</a></div>"""
         
         html = HTML_SAJU_RESULT.replace("__LOADING_SCRIPT__", LOADING_SCRIPT).replace("__CONTACT_PHONE__", CONTACT_PHONE).replace("__RESULT_CONTENT__", result_html)
         return get_no_cache_response(html)
@@ -159,7 +151,7 @@ async def saju_result(year: int, month: int, day: int, hour: int, calendar: str,
         return get_no_cache_response(html)
 
 # ==========================================
-# 2. 타로 (Tarot) 코드 - 3단계 프로세스
+# 2. 타로 (Tarot) 코드
 # ==========================================
 HTML_TAROT_CATEGORY = """
 <!DOCTYPE html><html lang="ko"><head>
@@ -273,7 +265,7 @@ async def tarot_result(category: str, card: int):
         selected_card = card_map.get(card, "운명의 수레바퀴")
         prompt = f"너는 신비로운 타로 마스터야. 사용자가 '{category_kr}' 고민을 가지고 '{selected_card}' 카드를 뽑았어. 이 카드가 의미하는 메시지와 '{category_kr}'에 대한 조언을 4문장 이내로 신비롭게 해석해줘."
         ai_comment = get_ai_response(prompt)
-        result_html = f"""<div class="result-box"><div class="result-title">🔮 {category_kr} 타로 리딩</div><div class="card-name">✨ {selected_card} ✨</div><div class="ai-comment">{ai_comment}</div><a href="/tarot?v=6" class="back-btn">← 다시 뽑기</a></div>"""
+        result_html = f"""<div class="result-box"><div class="result-title">🔮 {category_kr} 타로 리딩</div><div class="card-name">✨ {selected_card} ✨</div><div class="ai-comment">{ai_comment}</div><a href="/tarot?v=1" class="back-btn">← 다시 뽑기</a></div>"""
         
         html = HTML_TAROT_RESULT.replace("__LOADING_SCRIPT__", LOADING_SCRIPT).replace("__CONTACT_PHONE__", CONTACT_PHONE).replace("__RESULT_CONTENT__", result_html)
         return get_no_cache_response(html)
@@ -283,7 +275,7 @@ async def tarot_result(category: str, card: int):
          return get_no_cache_response(html)
 
 # ==========================================
-# 3. 궁합 (Compatibility) 코드
+# 3. 궁합 (Compatibility) 코드 - 음/양력 추가
 # ==========================================
 HTML_COMPAT_FORM = """
 <!DOCTYPE html><html lang="ko"><head>
@@ -369,7 +361,7 @@ async def compat_result(m_year: int, m_month: int, m_day: int, m_hour: int, m_ca
         prompt = f"너는 신비로운 궁합 상담가야. 남자 사주({m_saju}, {m_calendar} 기준)와 여자 사주({f_saju}, {f_calendar} 기준)를 바탕으로 두 사람의 케미스트리와 연애/결혼 운을 5문장 이내로 따뜻하고 긍정적으로 분석해줘."
         ai_comment = get_ai_response(prompt)
         
-        result_html = f"""<div class="result-box"><div class="result-title">케미스트리 분석</div><div class="saju-compare"><div>👨 남성<br>{m_saju}</div><div>💕</div><div>👩 여성<br>{f_saju}</div></div><div class="ai-comment">{ai_comment}</div><a href="/compat?v=6" class="back-btn">← 다시 입력하기</a></div>"""
+        result_html = f"""<div class="result-box"><div class="result-title">케미스트리 분석</div><div class="saju-compare"><div>👨 남성<br>{m_saju}</div><div>💕</div><div>👩 여성<br>{f_saju}</div></div><div class="ai-comment">{ai_comment}</div><a href="/compat?v=1" class="back-btn">← 다시 입력하기</a></div>"""
         
         html = HTML_COMPAT_RESULT.replace("__LOADING_SCRIPT__", LOADING_SCRIPT).replace("__CONTACT_PHONE__", CONTACT_PHONE).replace("__RESULT_CONTENT__", result_html)
         return get_no_cache_response(html)
