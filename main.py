@@ -7,12 +7,21 @@ from sajupy import calculate_saju
 from google import genai
 
 app = FastAPI()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # 💡 전화번호를 여기서 수정하세요!
-CONTACT_PHONE = "010-8759-0362" 
+CONTACT_PHONE = "010-1234-5678" 
+
+# 💡 안전한 AI 클라이언트 초기화 (에러가 나도 서버가 죽지 않게 방어)
+try:
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+except Exception as e:
+    print(f"AI 클라이언트 초기화 실패: {e}")
+    client = None
 
 def get_ai_response(prompt: str) -> str:
+    if not client:
+        return "현재 AI 서버 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요."
+    
     model_candidates = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-1.5-flash']
     for model_name in model_candidates:
         for attempt in range(3):
@@ -45,6 +54,11 @@ LOADING_SCRIPT = """
         function showLoading() { document.getElementById('loading-overlay').style.display = 'flex'; }
     </script>
 """
+
+# 💡 [핵심] Render의 Health Check를 통과하기 위한 루트 경로 추가
+@app.get("/")
+async def root():
+    return {"message": "소윤의 사주타로 서버가 정상 작동 중입니다."}
 
 # ==========================================
 # 1. 사주 (Saju) 코드
@@ -344,7 +358,6 @@ async def compat_result(m_year: int, m_month: int, m_day: int, m_hour: int, m_ca
         f_saju_res = calculate_saju(f_year, f_month, f_day, f_hour, 0)
         f_saju = f"{hanja_to_kr(f_saju_res['year_pillar'])} {hanja_to_kr(f_saju_res['month_pillar'])} {hanja_to_kr(f_saju_res['day_pillar'])} {hanja_to_kr(f_saju_res['hour_pillar'])}"
         
-        # 음/양력 정보를 프롬프트에 추가
         prompt = f"너는 신비로운 궁합 상담가야. 남자 사주({m_saju}, {m_calendar} 기준)와 여자 사주({f_saju}, {f_calendar} 기준)를 바탕으로 두 사람의 케미스트리와 연애/결혼 운을 5문장 이내로 따뜻하고 긍정적으로 분석해줘."
         ai_comment = get_ai_response(prompt)
         
