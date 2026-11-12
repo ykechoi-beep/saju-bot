@@ -35,7 +35,7 @@ def hanja_to_kr(text):
     return "".join([hanja_to_hangul.get(char, char) for char in text])
 
 # ==========================================
-# 공통 로딩 스크립트 및 프리미엄 CSS
+# 공통 로딩 스크립트 및 CSS (맑은 고딕 적용)
 # ==========================================
 BASE_SCRIPT = """
     <script>
@@ -46,13 +46,13 @@ BASE_SCRIPT = """
     </script>
 """
 
+# 💡 Noto Serif KR 제거, 맑은 고딕(Malgun Gothic) 최우선 적용
 BASE_CSS = """
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400;700&display=swap');
     * { box-sizing: border-box; }
     body { 
         background: linear-gradient(135deg, #090909, #1a1612, #090909); /* 딥 블랙 & 다크 브라운 */
         color: #f0e6d2; 
-        font-family: 'Noto Serif KR', 'Malgun Gothic', sans-serif; 
+        font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; /* 💡 맑은 고딕 적용 */
         margin: 0; 
         padding: 40px 20px; 
         min-height: 100vh;
@@ -64,8 +64,8 @@ BASE_CSS = """
     @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
     
     .hero-section { text-align: center; margin-bottom: 40px; }
-    .hero-title { color: #d4af37; font-size: 32px; font-weight: 700; margin: 0 0 15px 0; text-shadow: 0 0 20px rgba(212, 175, 55, 0.4); letter-spacing: 1px;}
-    .hero-subtitle { color: #a0a0a0; font-size: 15px; line-height: 1.6; font-weight: 300; word-break: keep-all;}
+    .hero-title { color: #d4af37; font-size: 30px; font-weight: 700; margin: 0 0 15px 0; text-shadow: 0 0 20px rgba(212, 175, 55, 0.4); letter-spacing: -0.5px;}
+    .hero-subtitle { color: #a0a0a0; font-size: 15px; line-height: 1.6; font-weight: 400; word-break: keep-all;}
     
     /* 💡 고급스러운 유리 질감 카드 (Glassmorphism) */
     .glass-panel { 
@@ -96,7 +96,7 @@ BASE_CSS = """
         height: 60px; 
         text-align: center; 
         font-size: 18px; 
-        font-family: 'Noto Serif KR', sans-serif;
+        font-family: 'Malgun Gothic', sans-serif; /* 💡 맑은 고딕 적용 */
         transition: all 0.3s;
     }
     input[type="number"]:focus { outline: none; border-color: #d4af37; box-shadow: 0 0 15px rgba(212,175,55,0.3); background: rgba(0,0,0,0.6);}
@@ -117,7 +117,7 @@ BASE_CSS = """
         color: #d4af37; 
         padding: 18px 10px; 
         border-radius: 12px; 
-        font-family: 'Noto Serif KR', sans-serif;
+        font-family: 'Malgun Gothic', sans-serif; /* 💡 맑은 고딕 적용 */
         font-weight: 700; 
         font-size: 15px; 
         cursor: pointer; 
@@ -196,7 +196,7 @@ HTML_SAJU_RESULT = f"""
     .result-box {{ background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(15px); border: 1px solid rgba(212, 175, 55, 0.3); border-radius: 20px; padding: 30px 25px; box-shadow: 0 15px 35px rgba(0,0,0,0.5); text-align: left; }}
     .result-title {{ color: #d4af37; font-size: 22px; font-weight: bold; border-bottom: 1px solid rgba(212, 175, 55, 0.3); padding-bottom: 15px; text-align: center; margin-bottom: 20px;}}
     .saju-text {{ font-size: 18px; font-weight: bold; color: #fff; margin: 20px 0; text-align: center; background: rgba(0,0,0,0.4); padding: 15px; border-radius: 10px; border: 1px solid rgba(212,175,55,0.2);}}
-    .ai-comment {{ line-height: 1.8; font-size: 15px; color: #ccc; font-weight: 300;}}
+    .ai-comment {{ line-height: 1.8; font-size: 15px; color: #ccc; font-weight: 400;}}
     .back-btn {{ display: block; margin-top: 30px; color: #d4af37; text-decoration: none; font-weight: bold; border: 1px solid #d4af37; padding: 15px; border-radius: 12px; text-align: center; background: transparent; transition: 0.3s;}}
     .back-btn:hover {{ background: rgba(212,175,55,0.1); }}
 </style></head><body>
@@ -296,7 +296,7 @@ HTML_TAROT_RESULT = f"""
     .result-box {{ background: rgba(43, 21, 74, 0.6); backdrop-filter: blur(15px); border: 1px solid rgba(216, 180, 226, 0.3); border-radius: 20px; padding: 30px 25px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);}}
     .result-title {{ color: #d8b4e2; font-size: 20px; font-weight: bold; border-bottom: 1px solid rgba(216,180,226,0.3); padding-bottom: 15px; text-align: center; margin-bottom: 20px;}}
     .card-name {{ font-size: 24px; font-weight: bold; color: #fff; margin: 20px 0; text-align: center; text-shadow: 0 0 15px rgba(138,43,226,0.8);}}
-    .ai-comment {{ line-height: 1.8; font-size: 15px; color: #ccc; font-weight: 300;}}
+    .ai-comment {{ line-height: 1.8; font-size: 15px; color: #ccc; font-weight: 400;}}
     .back-btn {{ display: block; margin-top: 30px; color: #d8b4e2; text-decoration: none; font-weight: bold; border: 1px solid #d8b4e2; padding: 15px; border-radius: 12px; text-align: center; background: transparent; transition: 0.3s;}}
     .hero-title {{ color: #d8b4e2; text-shadow: 0 0 20px rgba(138,43,226,0.5); }}
 </style></head><body>
@@ -382,7 +382,7 @@ HTML_COMPAT_RESULT = f"""
     .result-box {{ background: rgba(255, 105, 180, 0.05); backdrop-filter: blur(15px); border: 1px solid rgba(255, 105, 180, 0.3); border-radius: 20px; padding: 30px 25px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);}}
     .result-title {{ color: #ff69b4; font-size: 20px; font-weight: bold; border-bottom: 1px solid rgba(255,105,180,0.3); padding-bottom: 15px; text-align: center; margin-bottom: 20px;}}
     .saju-compare {{ display: flex; justify-content: space-around; margin: 20px 0; text-align: center; font-weight: bold; color: #fff; background: rgba(0,0,0,0.4); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,105,180,0.2);}}
-    .ai-comment {{ line-height: 1.8; font-size: 15px; color: #ccc; font-weight: 300;}}
+    .ai-comment {{ line-height: 1.8; font-size: 15px; color: #ccc; font-weight: 400;}}
     .back-btn {{ display: block; margin-top: 30px; color: #ff69b4; text-decoration: none; font-weight: bold; border: 1px solid #ff69b4; padding: 15px; border-radius: 12px; text-align: center; background: transparent; transition: 0.3s;}}
 </style></head><body>
     {BASE_SCRIPT}
@@ -412,10 +412,3 @@ async def compat_result(m_year: int, m_month: int, m_day: int, m_hour: int, m_ca
         return get_no_cache_response(HTML_COMPAT_RESULT.replace("{result_content}", result_html))
     except Exception as e:
          return get_no_cache_response(HTML_COMPAT_RESULT.replace("{result_content}", f"<div class='result-box'>오류: {str(e)}</div>"))
-
-# ==========================================
-# 루트 접속 시 사주로 리다이렉트 (선택사항)
-# ==========================================
-@app.get("/")
-async def root_page():
-    return get_no_cache_response(HTML_SAJU_FORM)
