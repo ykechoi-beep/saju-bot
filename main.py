@@ -24,13 +24,18 @@ def get_ai_response(prompt: str) -> str:
                     break
     return "현재 우주의 기운이 혼잡하여 분석이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
 
-# 💡 입력 폼 화면 (변경된 로딩 문구 적용)
+# 💡 [캐시 방어 1] HTML 메타 태그에 캐시 금지 명령 추가
 HTML_FORM = """
 <!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 💡 캐시 방지 메타 태그 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
     <title>소윤의 사주타로</title>
     <style>
         body { background-color: #f4e8d3; color: #333; font-family: 'Malgun Gothic', sans-serif; text-align: center; padding: 20px; margin: 0; }
@@ -46,7 +51,6 @@ HTML_FORM = """
         button { background: #b8860b; color: #fff; border: none; padding: 15px; border-radius: 8px; font-weight: 700; font-size: 15px; cursor: pointer; }
         button:active { background: #5c4000; }
 
-        /* 💡 로딩 오버레이 스타일 */
         #loading-overlay {
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(244, 232, 211, 0.95); z-index: 9999;
@@ -58,20 +62,21 @@ HTML_FORM = """
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* 💡 변경된 로딩 문구 디자인 */
-        .loading-text { 
-            color: #8b4513; 
-            font-size: 18px; 
-            font-weight: bold; 
-            padding: 0 20px;
-            line-height: 1.5;
-            word-break: keep-all;
-        }
+        .loading-text { color: #8b4513; font-size: 18px; font-weight: bold; padding: 0 20px; line-height: 1.5; word-break: keep-all; }
         .loading-subtext { color: #b8860b; font-size: 14px; margin-top: 15px; }
     </style>
 </head>
 <body>
-    <!-- 💡 로딩 화면 (처음엔 숨김) -->
+    <!-- 💡 [캐시 방어 2] 페이지 로드 시 강제 새로고침 스크립트 -->
+    <script>
+        window.onpageshow = function(event) {
+            // 만약 뒤로가기나 캐시로 인해 페이지가 로드되었다면, 강제로 새로고침합니다.
+            if (event.persisted || (typeof window.performance != "undefined" && window.performance.navigation.type === 2)) {
+                location.reload(true); 
+            }
+        };
+    </script>
+
     <div id="loading-overlay">
         <div class="spinner"></div>
         <div class="loading-text">당신의 고민과 타고난 운명의 흐름을 살펴보고 있습니다...</div>
@@ -82,7 +87,6 @@ HTML_FORM = """
         <h1>🔮 소윤의 사주타로</h1>
         <div class="welcome">환영합니다.<br>당신의 삶의 좌표를 찾아드립니다.</div>
         
-        <!-- 💡 GET 방식 전송 및 로딩 화면 호출 -->
         <form action="/saju/result" method="GET" class="form-group" onsubmit="showLoading()">
             <div class="input-row">
                 <input type="number" name="year" placeholder="년" required>
@@ -126,6 +130,11 @@ HTML_RESULT_TEMPLATE = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 💡 캐시 방지 메타 태그 -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
     <title>분석 결과</title>
     <style>
         body { background-color: #f4e8d3; color: #333; font-family: 'Malgun Gothic', sans-serif; text-align: center; padding: 20px; margin: 0; }
@@ -140,6 +149,14 @@ HTML_RESULT_TEMPLATE = """
     </style>
 </head>
 <body>
+    <!-- 💡 [캐시 방어 2] 페이지 로드 시 강제 새로고침 스크립트 -->
+    <script>
+        window.onpageshow = function(event) {
+            if (event.persisted || (typeof window.performance != "undefined" && window.performance.navigation.type === 2)) {
+                location.reload(true); 
+            }
+        };
+    </script>
     <div class="container">
         <h1>🔮 분석 결과</h1>
         {result_content}
@@ -148,9 +165,10 @@ HTML_RESULT_TEMPLATE = """
 </html>
 """
 
-# 💡 캐시 방지 헤더를 추가하여 재입력 시 반응 없음 문제 해결
+# 💡 [캐시 방어 3] 서버 응답 헤더에 강력한 캐시 금지 명령 추가
 def get_no_cache_response(html_content: str):
     response = HTMLResponse(content=html_content)
+    # no-store: 아예 저장하지 마라, no-cache: 매번 서버에 물어봐라, max-age=0: 유효기간 0초
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -158,6 +176,7 @@ def get_no_cache_response(html_content: str):
 
 @app.get("/saju")
 async def saju_page():
+    # URL에 타임스탬프를 붙여서 매번 새로운 요청으로 인식하게 함 (캐시 우회)
     return get_no_cache_response(HTML_FORM)
 
 @app.get("/saju/result")
@@ -179,7 +198,6 @@ async def saju_result(year: int, month: int, day: int, hour: int, calendar: str,
             <div class="result-title">🔮 {fortune_type_kr} 분석 결과</div>
             <div class="saju-text">사주팔자: {saju_text}</div>
             <div class="ai-comment">{ai_comment}</div>
-            <!-- 💡 캐시 방지를 위해 다시 입력하기 링크에 파라미터를 붙임 -->
             <a href="/saju?reset=true" class="back-btn">← 다시 입력하기</a>
         </div>
         """
