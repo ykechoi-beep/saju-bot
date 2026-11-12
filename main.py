@@ -10,7 +10,7 @@ app = FastAPI()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 # 💡 전화번호를 여기서 수정하세요!
-CONTACT_PHONE = "010-1234-5678" 
+CONTACT_PHONE = "010-8759-0362" 
 
 def get_ai_response(prompt: str) -> str:
     model_candidates = ['gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-1.5-flash']
