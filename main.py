@@ -101,7 +101,7 @@ HTML_SAJU_RESULT = f"""
     .back-btn {{ display: block; margin-top: 25px; color: #8b4513; text-decoration: none; font-weight: bold; border: 1px solid #8b4513; padding: 12px; border-radius: 8px; text-align: center; background: #fff;}}
 </style></head><body>
     {LOADING_SCRIPT}
-    <div class="container"><h1>🔮 분석 결과</h1>{result_content}</div>
+    <div class="container"><h1>🔮 분석 결과</h1>{{result_content}}</div>
 </body></html>
 """
 
@@ -178,7 +178,7 @@ HTML_TAROT_CARDS = f"""
         <h1>🃏 신비의 타로</h1>
         <div class="welcome">직관적으로 끌리는 카드를<br>하나 선택하세요.</div>
         <form action="/tarot/result" method="GET" onsubmit="showLoading()">
-            <input type="hidden" name="category" value="{category}">
+            <input type="hidden" name="category" value="{{category}}">
             <div class="card-grid">
                 <button type="submit" name="card" value="1" class="tarot-card"><div class="card-icon">🌙</div><div class="card-text">1번</div></button>
                 <button type="submit" name="card" value="2" class="tarot-card"><div class="card-icon">⭐</div><div class="card-text">2번</div></button>
@@ -202,7 +202,7 @@ HTML_TAROT_RESULT = f"""
     .back-btn {{ display: block; margin-top: 25px; color: #e6c200; text-decoration: none; font-weight: bold; border: 1px solid #e6c200; padding: 12px; border-radius: 8px; text-align: center; background: transparent;}}
 </style></head><body>
     {LOADING_SCRIPT}
-    <div class="container"><h1>🃏 타로 리딩 결과</h1>{result_content}</div>
+    <div class="container"><h1>🃏 타로 리딩 결과</h1>{{result_content}}</div>
 </body></html>
 """
 
@@ -288,7 +288,7 @@ HTML_COMPAT_RESULT = f"""
     .back-btn {{ display: block; margin-top: 25px; color: #8b4513; text-decoration: none; font-weight: bold; border: 1px solid #8b4513; padding: 12px; border-radius: 8px; text-align: center; background: #fff;}}
 </style></head><body>
     {LOADING_SCRIPT}
-    <div class="container"><h1>💑 궁합 분석 결과</h1>{result_content}</div>
+    <div class="container"><h1>💑 궁합 분석 결과</h1>{{result_content}}</div>
 </body></html>
 """
 
