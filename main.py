@@ -1,6 +1,7 @@
 import os
 import time
 import traceback
+import requests  # 💡 음력 변환을 위한 requests 추가
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from sajupy import calculate_saju
@@ -12,45 +13,82 @@ app = FastAPI()
 # 💡 전화번호를 여기서 수정하세요!
 CONTACT_PHONE = "010-8759-0362" 
 
-# 💡 안전한 AI 클라이언트 초기화 (에러가 나도 서버가 죽지 않게 방어)
+# 💡 안전한 AI 클라이언트 초기화
 try:
     client = genai.Client(
         api_key=os.getenv("GEMINI_API_KEY"),
-        http_options=types.HttpOptions(timeout=15000) # 15초 타임아웃
+        http_options=types.HttpOptions(timeout=15000)
     )
 except Exception as e:
     print(f"AI 클라이언트 초기화 실패: {e}")
     client = None
 
-def get_ai_response(prompt: str) -> str:
-    if not client:
-        return "현재 AI 서버 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요."
+# 💡 [신규] KASI API를 이용한 음력 -> 양력 변환 함수
+def convert_lunar_to_solar(lunar_y: int, lunar_m: int, lunar_d: int):
+    api_key = os.getenv("KASI_API_KEY")
+    if not api_key:
+        print("KASI_API_KEY가 없습니다. 양력으로 강제 계산합니다.")
+        return lunar_y, lunar_m, lunar_d
+
+    url = "http://apis.data.go.kr/B090041/openapi/service/LrsrCldInfoService/getSolCalInfo"
+    params = {
+        'serviceKey': api_key,
+        'lunYear': str(lunar_y),
+        'lunMonth': str(lunar_m).zfill(2),
+        'lunDay': str(lunar_d).zfill(2),
+        '_type': 'json'
+    }
     
-    # 💡 [수정] 속도 및 무료 한도 최적화 순위 적용
-    model_candidates = [
-        'gemini-3.5-flash-lite',  # 🥇 1순위: 가장 빠르고 무료 한도 넉넉 (500 RPD)
-        'gemini-2.5-flash-lite',  # 🥈 2순위: 초저지연 백업
-        'gemini-3.8-flash'        # 🥉 3순위: 최후의 백업 (지능 높음)
-    ]
+    try:
+        response = requests.get(url, params=params, timeout=5)
+        data = response.json()
+        item = data['response']['body']['items']['item']
+        
+        # 변환된 양력 날짜 추출 (KASI API 응답 구조에 맞춤)
+        sol_y = int(item.get('solYear', lunar_y))
+        sol_m = int(item.get('solMonth', lunar_m))
+        sol_d = int(item.get('solDay', lunar_d))
+        print(f"🔄 음력 {lunar_y}-{lunar_m}-{lunar_d} -> 양력 {sol_y}-{sol_m}-{sol_d} 변환 성공")
+        return sol_y, sol_m, sol_d
+    except Exception as e:
+        print(f"❌ 음력 변환 실패 (양력으로 계산 진행): {e}")
+        return lunar_y, lunar_m, lunar_d # 실패 시 입력값 그대로 사용
+
+# 💡 [신규] AI 실패 시 사용할 기본 해석 템플릿
+def get_default_fallback(saju_text: str, fortune_type_kr: str):
+    # 사주 텍스트(예: 을해 경진 병신 병신)에서 첫 글자(천간)를 추출
+    first_char = saju_text[0] if saju_text else '갑'
+    
+    # 천간별 기본 기질 매핑
+    traits = {
+        '갑': "곧은 나무처럼 리더십이 강하고 진취적인 기운", '을': "유연한 풀처럼 적응력이 뛰어나고 섬세한 기운",
+        '병': "태양처럼 열정적이고 밝게 빛나는 기운", '정': "촛불처럼 따뜻하고 내면이 깊은 기운",
+        '무': "산처럼 듬직하고 신뢰를 주는 기운", '기': "비옥한 땅처럼 포용력이 넓은 기운",
+        '경': "단단한 쇠처럼 결단력이 있고 의리 있는 기운", '신': "보석처럼 반짝이며 예리한 기운",
+        '임': "바다처럼 지혜롭고 스케일이 큰 기운", '계': "맑은 물처럼 맑고 유연한 기운"
+    }
+    trait = traits.get(first_char, "우주의 신비로운 기운")
+    
+    return f"현재 우주의 기운이 혼잡하여 AI 분석이 지연되고 있습니다. 하지만 당신의 사주는 '{trait}'을 타고났습니다. {fortune_type_kr}에 있어서도 이 타고난 긍정적인 에너지를 믿고 나아가시면 좋은 결과가 있을 것입니다. 잠시 후 다시 시도하시면 더 상세한 풀이를 볼 수 있습니다."
+
+def get_ai_response(prompt: str, saju_text: str = "", fortune_type_kr: str = "운세") -> str:
+    if not client:
+        return get_default_fallback(saju_text, fortune_type_kr)
+    
+    model_candidates = ['gemini-3.5-flash-lite', 'gemini-2.5-flash-lite', 'gemini-3.8-flash']
     
     for model_name in model_candidates:
         try:
-            print(f"🔄 AI 모델 시도 중: {model_name}")
-            response = client.models.generate_content(
-                model=model_name, 
-                contents=prompt
-            )
+            response = client.models.generate_content(model=model_name, contents=prompt)
             if response.text: 
-                print(f"✅ AI 응답 성공: {model_name}")
                 return response.text
-            else:
-                print(f"⚠️ 응답은 왔으나 텍스트가 비어있음: {model_name}")
         except Exception as e:
-            # 속도를 위해 time.sleep 없이 즉시 다음 모델로 넘어감
-            print(f"❌ AI 에러 발생 ({model_name}): {str(e)}")
+            print(f"❌ AI 에러 ({model_name}): {str(e)}")
             continue 
             
-    return "현재 우주의 기운이 혼잡하여 분석이 지연되고 있습니다. 잠시 후 다시 시도해 주세요."
+    # 모든 모델 실패 시 기본 해석 반환
+    print("🚨 모든 AI 모델 실패, 기본 해석을 반환합니다.")
+    return get_default_fallback(saju_text, fortune_type_kr)
 
 def get_no_cache_response(html_content: str):
     response = HTMLResponse(content=html_content)
@@ -72,12 +110,10 @@ LOADING_SCRIPT = """
     </script>
 """
 
-# 💡 [핵심 1] Render의 Health Check 및 UptimeRobot 통과를 위한 루트 경로
 @app.get("/")
 async def root():
     return {"message": "소윤의 사주타로 서버가 정상 작동 중입니다."}
 
-# 💡 [핵심 2] UptimeRobot 전용 Health Check 경로 (405 에러 방지용)
 @app.head("/health")
 @app.get("/health")
 async def health_check():
@@ -86,7 +122,7 @@ async def health_check():
 # ==========================================
 # 1. 사주 (Saju) 코드
 # ==========================================
-# ... (이하 사주, 타로, 궁합 HTML 및 라우팅 코드는 이전과 완전히 동일하므로 생략하지 않고 그대로 유지합니다.) ...
+# (HTML 디자인 코드는 동일하므로 생략하지 않고 그대로 유지합니다.)
 HTML_SAJU_FORM = """
 <!DOCTYPE html><html lang="ko"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -161,10 +197,20 @@ async def saju_result(year: int, month: int, day: int, hour: int, calendar: str,
     try:
         fortune_map = {"today": "오늘의 운세", "month": "이달의 운세", "year1": "1년 운세", "year5": "5년 운세", "year10": "10년 운세", "life": "평생 운세"}
         fortune_type_kr = fortune_map.get(fortune_type, "오늘의 운세")
-        saju_result = calculate_saju(year, month, day, hour, 0)
+        
+        # 💡 [신규] 음력일 경우 양력으로 변환
+        calc_y, calc_m, calc_d = year, month, day
+        if calendar == "음력":
+            calc_y, calc_m, calc_d = convert_lunar_to_solar(year, month, day)
+
+        saju_result = calculate_saju(calc_y, calc_m, calc_d, hour, 0)
         saju_text = f"{hanja_to_kr(saju_result['year_pillar'])} {hanja_to_kr(saju_result['month_pillar'])} {hanja_to_kr(saju_result['day_pillar'])} {hanja_to_kr(saju_result['hour_pillar'])}"
+        
         prompt = f"너는 친절하고 신비로운 분위기의 동양 명리학 사주 상담가야. {gender}의 사주팔자({saju_text})를 바탕으로 '{fortune_type_kr}'에 대한 조언을 4문장 이내로 따뜻하고 긍정적으로 해줘. 참고로 입력된 생년월일시는 '{calendar}' 기준이야."
-        ai_comment = get_ai_response(prompt)
+        
+        # 💡 [수정] AI 실패 시 기본 해석을 위해 saju_text와 fortune_type_kr 전달
+        ai_comment = get_ai_response(prompt, saju_text, fortune_type_kr)
+        
         result_html = f"""<div class="result-box"><div class="result-title">🔮 {fortune_type_kr} 분석 결과</div><div class="saju-text">사주팔자: {saju_text}</div><div class="ai-comment">{ai_comment}</div><a href="/saju?v=7" class="back-btn">← 다시 입력하기</a></div>"""
         
         html = HTML_SAJU_RESULT.replace("__LOADING_SCRIPT__", LOADING_SCRIPT).replace("__CONTACT_PHONE__", CONTACT_PHONE).replace("__RESULT_CONTENT__", result_html)
@@ -288,7 +334,10 @@ async def tarot_result(category: str, card: int):
         card_map = {1: "달 (The Moon)", 2: "별 (The Star)", 3: "태양 (The Sun)"}
         selected_card = card_map.get(card, "운명의 수레바퀴")
         prompt = f"너는 신비로운 타로 마스터야. 사용자가 '{category_kr}' 고민을 가지고 '{selected_card}' 카드를 뽑았어. 이 카드가 의미하는 메시지와 '{category_kr}'에 대한 조언을 4문장 이내로 신비롭게 해석해줘."
-        ai_comment = get_ai_response(prompt)
+        
+        # 타로는 사주 텍스트가 없으므로 기본 해석(백업)을 위해 임의의 텍스트 전달
+        ai_comment = get_ai_response(prompt, "타로 카드", category_kr)
+        
         result_html = f"""<div class="result-box"><div class="result-title">🔮 {category_kr} 타로 리딩</div><div class="card-name">✨ {selected_card} ✨</div><div class="ai-comment">{ai_comment}</div><a href="/tarot?v=7" class="back-btn">← 다시 뽑기</a></div>"""
         
         html = HTML_TAROT_RESULT.replace("__LOADING_SCRIPT__", LOADING_SCRIPT).replace("__CONTACT_PHONE__", CONTACT_PHONE).replace("__RESULT_CONTENT__", result_html)
@@ -377,13 +426,26 @@ async def compat_page():
 @app.get("/compat/result")
 async def compat_result(m_year: int, m_month: int, m_day: int, m_hour: int, m_calendar: str, f_year: int, f_month: int, f_day: int, f_hour: int, f_calendar: str):
     try:
-        m_saju_res = calculate_saju(m_year, m_month, m_day, m_hour, 0)
+        # 💡 [신규] 남성 음력 변환
+        calc_my, calc_mm, calc_md = m_year, m_month, m_day
+        if m_calendar == "음력":
+            calc_my, calc_mm, calc_md = convert_lunar_to_solar(m_year, m_month, m_day)
+
+        # 💡 [신규] 여성 음력 변환
+        calc_fy, calc_fm, calc_fd = f_year, f_month, f_day
+        if f_calendar == "음력":
+            calc_fy, calc_fm, calc_fd = convert_lunar_to_solar(f_year, f_month, f_day)
+
+        m_saju_res = calculate_saju(calc_my, calc_mm, calc_md, m_hour, 0)
         m_saju = f"{hanja_to_kr(m_saju_res['year_pillar'])} {hanja_to_kr(m_saju_res['month_pillar'])} {hanja_to_kr(m_saju_res['day_pillar'])} {hanja_to_kr(m_saju_res['hour_pillar'])}"
-        f_saju_res = calculate_saju(f_year, f_month, f_day, f_hour, 0)
+        
+        f_saju_res = calculate_saju(calc_fy, calc_fm, calc_fd, f_hour, 0)
         f_saju = f"{hanja_to_kr(f_saju_res['year_pillar'])} {hanja_to_kr(f_saju_res['month_pillar'])} {hanja_to_kr(f_saju_res['day_pillar'])} {hanja_to_kr(f_saju_res['hour_pillar'])}"
         
         prompt = f"너는 신비로운 궁합 상담가야. 남자 사주({m_saju}, {m_calendar} 기준)와 여자 사주({f_saju}, {f_calendar} 기준)를 바탕으로 두 사람의 케미스트리와 연애/결혼 운을 5문장 이내로 따뜻하고 긍정적으로 분석해줘."
-        ai_comment = get_ai_response(prompt)
+        
+        # 궁합의 경우 사주 텍스트를 조합해서 기본 해석에 넘김
+        ai_comment = get_ai_response(prompt, m_saju + f_saju, "궁합")
         
         result_html = f"""<div class="result-box"><div class="result-title">케미스트리 분석</div><div class="saju-compare"><div>👨 남성<br>{m_saju}</div><div>💕</div><div>👩 여성<br>{f_saju}</div></div><div class="ai-comment">{ai_comment}</div><a href="/compat?v=7" class="back-btn">← 다시 입력하기</a></div>"""
         
