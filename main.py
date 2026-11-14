@@ -10,7 +10,7 @@ from google.genai import types
 app = FastAPI()
 
 # 💡 전화번호를 여기서 수정하세요!
-CONTACT_PHONE = "010-8759-0362" 
+CONTACT_PHONE = "010-1234-5678" 
 
 # 💡 안전한 AI 클라이언트 초기화 (에러가 나도 서버가 죽지 않게 방어)
 try:
@@ -72,14 +72,21 @@ LOADING_SCRIPT = """
     </script>
 """
 
-# 💡 [핵심] Render의 Health Check 및 UptimeRobot 통과를 위한 루트 경로
+# 💡 [핵심 1] Render의 Health Check 및 UptimeRobot 통과를 위한 루트 경로
 @app.get("/")
 async def root():
     return {"message": "소윤의 사주타로 서버가 정상 작동 중입니다."}
 
+# 💡 [핵심 2] UptimeRobot 전용 Health Check 경로 (405 에러 방지용)
+@app.head("/health")
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 # ==========================================
 # 1. 사주 (Saju) 코드
 # ==========================================
+# ... (이하 사주, 타로, 궁합 HTML 및 라우팅 코드는 이전과 완전히 동일하므로 생략하지 않고 그대로 유지합니다.) ...
 HTML_SAJU_FORM = """
 <!DOCTYPE html><html lang="ko"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
