@@ -10,7 +10,7 @@ from google.genai import types
 app = FastAPI()
 
 # 💡 전화번호를 여기서 수정하세요!
-CONTACT_PHONE = "010-1234-5678" 
+CONTACT_PHONE = "010-8759-0362" 
 
 # 💡 안전한 AI 클라이언트 초기화 (에러가 나도 서버가 죽지 않게 방어)
 try:
